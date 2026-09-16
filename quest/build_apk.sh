@@ -38,8 +38,14 @@ mkdir -p "$OUT_DIR"/{flat,gen,classes,dex,lib/arm64-v8a,assets}
 echo "==> aapt2 compile"
 "$AAPT2" compile --dir "$D3_ROOT/quest/app/res" -o "$OUT_DIR/flat/res.zip"
 
+# Sideload dev builds are debuggable: this enables launch arguments
+# (D3Activity) and "adb shell run-as". Set APK_DEBUGGABLE=0 for releases.
+APK_DEBUGGABLE="${APK_DEBUGGABLE:-1}"
+debug_flag=()
+[[ "$APK_DEBUGGABLE" == 1 ]] && debug_flag=(--debug-mode)
+
 echo "==> aapt2 link"
-"$AAPT2" link \
+"$AAPT2" link ${debug_flag[@]+"${debug_flag[@]}"} \
   -I "$PLATFORM_JAR" \
   --manifest "$D3_ROOT/quest/app/AndroidManifest.xml" \
   --java "$OUT_DIR/gen" \
@@ -47,8 +53,8 @@ echo "==> aapt2 link"
   -o "$OUT_DIR/base.apk" \
   "$OUT_DIR/flat/res.zip"
 
-echo "==> javac (SDL activity + generated R)"
-find "$SDL_JAVA" -name '*.java' > "$OUT_DIR/sources.txt"
+echo "==> javac (SDL + D3Activity + generated R)"
+find "$SDL_JAVA" "$D3_ROOT/quest/app/java" -name '*.java' > "$OUT_DIR/sources.txt"
 find "$OUT_DIR/gen" -name '*.java' >> "$OUT_DIR/sources.txt"
 javac -nowarn -encoding UTF-8 --release 11 \
   -classpath "$PLATFORM_JAR" \

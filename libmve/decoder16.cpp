@@ -342,8 +342,10 @@ static void dispatchDecoder16(unsigned short **pFrame, unsigned char codeType, u
     --*pDataRemain;
     break;
   case 0x5:
-    x = (char)*(*pData)++;
-    y = (char)*(*pData)++;
+    // Signed 8-bit offsets. Plain char is unsigned on ARM, which turned every
+    // negative offset into a large positive one (block garbage in movies).
+    x = (signed char)*(*pData)++;
+    y = (signed char)*(*pData)++;
     copyFrame(*pFrame, *pFrame + (backBuf2 - backBuf1) + x + y * g_width);
     *pDataRemain -= 2;
     break;

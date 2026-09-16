@@ -283,6 +283,13 @@ include_directories(
   >
 )
 
+# The engine was written for x86, where plain char is signed. On ARM (Quest,
+# Linux aarch64) it is unsigned, which silently breaks code that stores signed
+# bytes in char. Keep x86 semantics everywhere; this is a no-op on x86 and on
+# Apple arm64, whose ABI already uses signed char. MSVC's char is always signed.
+add_compile_options($<$<COMPILE_LANG_AND_ID:CXX,GNU,Clang,AppleClang>:-fsigned-char>
+                    $<$<COMPILE_LANG_AND_ID:C,GNU,Clang,AppleClang>:-fsigned-char>)
+
 add_subdirectory(third_party)
 
 add_subdirectory(2dlib)

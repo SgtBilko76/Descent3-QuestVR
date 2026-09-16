@@ -33,7 +33,7 @@
         <meta-data android:name="SDL_ENV.SDL_ANDROID_TRAP_BACK_BUTTON" android:value="0" />
 
         <activity
-            android:name="org.libsdl.app.SDLActivity"
+            android:name=".D3Activity"
             android:label="Descent 3"
             android:exported="true"
             android:launchMode="singleTask"
