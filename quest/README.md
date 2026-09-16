@@ -1,4 +1,4 @@
-# Descent 3 for Meta Quest — Beta 0.1
+# Descent 3 for Meta Quest — version @VERSION@
 
 A VR port of the [Descent 3 open source engine](https://github.com/DescentDevelopers/Descent3)
 for Meta Quest headsets, running standalone as a sideloaded app. You sit in a
@@ -6,7 +6,8 @@ virtual cockpit: the ship flies on the Touch controllers while you look around
 freely. The world and the cockpit are rendered in stereo; menus, cutscenes and
 the flat HUD float in front of you.
 
-This is a beta. It has been tested on a **Meta Quest 3** only.
+This is a beta. It has been tested on a **Meta Quest 3** only. See
+`CHANGELOG.md` for what changed between versions.
 
 ## What you need
 
@@ -19,11 +20,15 @@ This is a beta. It has been tested on a **Meta Quest 3** only.
 
 ## Installing
 
+(In the source tree, `@VERSION@` stands for the release version.)
+
 ```bash
-adb install Descent3-Quest-0.1-beta.apk
+adb install Descent3-Quest-@VERSION@.apk
 ```
 
-The app appears in the Quest library under *Unknown Sources*.
+The app appears in the Quest library under *Unknown Sources*. To update an
+earlier release, install the new APK with `adb install -r`; your game data and
+pilots are kept.
 
 > **Uninstalling the app deletes the game data folder below** (Android removes
 > an app's data directory with the app). Keep a copy of your game files.
