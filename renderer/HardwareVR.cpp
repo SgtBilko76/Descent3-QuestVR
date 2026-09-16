@@ -69,7 +69,9 @@ extern rendering_state gpu_state;
 
 namespace {
 
-// Tunables. The flat screen floats this far in front of the cockpit origin.
+// Tunables. The flat screen (menus, and the crosshair while flying) floats this
+// far in front of the cockpit origin. While flying, the rest of the HUD floats
+// nearer (-vrhuddistance), scaled to cover the same view angle.
 constexpr float kScreenDistance = 1.5f;   // meters
 constexpr float kScreenWidth = 1.8f;      // meters (about 62 degrees wide)
 constexpr float kLongPressSeconds = 0.5f;
@@ -143,7 +145,12 @@ struct VRState {
   int eye_size = 0;
   Swapchain eye[2];
   Swapchain screen;
+  Swapchain reticle;
   GLuint eye_fbo = 0;
+  GLuint reticle_fbo = 0;
+  bool reticle_acquired = false;
+  bool reticle_this_frame = false;
+  float hud_distance = 0.9f;    // meters, while flying
   GLuint eye_depth = 0;
   GLuint screen_fbo = 0;
   int active_eye = -1;
@@ -878,6 +885,7 @@ bool BeginFrame() {
   vr.views_located = false;
   vr.eye_rendered[0] = vr.eye_rendered[1] = false;
   vr.world_this_frame = false;
+  vr.reticle_this_frame = false;
   vr.time = static_cast<float>(SDL_GetTicks()) / 1000.0f;
   PollInput();
   return true;
@@ -912,16 +920,31 @@ bool LocateViews() {
   return true;
 }
 
-bool EnsureScreenSwapchain(int w, int h) {
-  if (vr.screen.handle != XR_NULL_HANDLE && vr.screen.width == w && vr.screen.height == h) {
+bool EnsureSwapchain(Swapchain &sc, int w, int h, const char *name) {
+  if (sc.handle != XR_NULL_HANDLE && sc.width == w && sc.height == h) {
     return true;
   }
-  DestroySwapchain(vr.screen);
-  if (!CreateSwapchain(vr.screen, w, h)) {
+  DestroySwapchain(sc);
+  if (!CreateSwapchain(sc, w, h)) {
     return false;
   }
-  LOG_INFO.printf("VR: screen layer %d x %d", w, h);
+  LOG_INFO.printf("VR: %s layer %d x %d", name, w, h);
   return true;
+}
+
+// A flat layer centered straight ahead of the cockpit origin.
+XrCompositionLayerQuad FlatLayer(const Swapchain &sc, int w, int h, float distance, float width, bool transparent) {
+  XrCompositionLayerQuad quad{XR_TYPE_COMPOSITION_LAYER_QUAD};
+  quad.space = vr.local_space;
+  quad.eyeVisibility = XR_EYE_VISIBILITY_BOTH;
+  quad.subImage.swapchain = sc.handle;
+  quad.subImage.imageRect = {{0, 0}, {w, h}};
+  quad.pose.orientation.w = 1;
+  quad.pose.position = {0, 0, -distance};
+  quad.size = {width, width * static_cast<float>(h) / static_cast<float>(w)};
+  // Over the world the layers are premultiplied alpha; alone they are opaque.
+  quad.layerFlags = transparent ? XR_COMPOSITION_LAYER_BLEND_TEXTURE_SOURCE_ALPHA_BIT : 0;
+  return quad;
 }
 
 } // namespace
@@ -1099,6 +1122,8 @@ bool vrgl_Init() {
   glBindFramebuffer(GL_FRAMEBUFFER, vr.eye_fbo);
   glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GL_RENDERBUFFER, vr.eye_depth);
   glGenFramebuffers(1, &vr.screen_fbo);
+  glGenFramebuffers(1, &vr.reticle_fbo);
+  vr.hud_distance = std::clamp(ArgFloat("-vrhuddistance", 0.9f), 0.3f, 5.0f);
   opengl_BindScreenFramebuffer();
 
   if (!InitInput()) {
@@ -1119,6 +1144,7 @@ void vrgl_Shutdown() {
   DestroySwapchain(vr.eye[0]);
   DestroySwapchain(vr.eye[1]);
   DestroySwapchain(vr.screen);
+  DestroySwapchain(vr.reticle);
   if (vr.session != XR_NULL_HANDLE) {
     xrDestroySession(vr.session);
   }
@@ -1144,7 +1170,8 @@ bool vrgl_Present(unsigned int screen_fbo, int w, int h) {
   std::vector<XrCompositionLayerBaseHeader *> layers;
   XrCompositionLayerProjection projection{XR_TYPE_COMPOSITION_LAYER_PROJECTION};
   std::array<XrCompositionLayerProjectionView, 2> proj_views{};
-  XrCompositionLayerQuad quad{XR_TYPE_COMPOSITION_LAYER_QUAD};
+  XrCompositionLayerQuad reticle_quad{};
+  XrCompositionLayerQuad quad{};
 
   if (vr.frame_state.shouldRender) {
     if (vr.world_this_frame && vr.eye_rendered[0] && vr.eye_rendered[1]) {
@@ -1163,8 +1190,13 @@ bool vrgl_Present(unsigned int screen_fbo, int w, int h) {
       layers.push_back(reinterpret_cast<XrCompositionLayerBaseHeader *>(&projection));
     }
 
+    if (vr.reticle_this_frame) {
+      reticle_quad = FlatLayer(vr.reticle, vr.reticle.width, vr.reticle.height, kScreenDistance, kScreenWidth, true);
+      layers.push_back(reinterpret_cast<XrCompositionLayerBaseHeader *>(&reticle_quad));
+    }
+
     // The flat screen: copy the engine's screen framebuffer into its layer.
-    if (EnsureScreenSwapchain(w, h) && AcquireInto(vr.screen, vr.screen_fbo)) {
+    if (EnsureSwapchain(vr.screen, w, h, "screen") && AcquireInto(vr.screen, vr.screen_fbo)) {
       glBindFramebuffer(GL_READ_FRAMEBUFFER, screen_fbo);
       glBindFramebuffer(GL_DRAW_FRAMEBUFFER, vr.screen_fbo);
       glDisable(GL_SCISSOR_TEST);
@@ -1172,15 +1204,12 @@ bool vrgl_Present(unsigned int screen_fbo, int w, int h) {
       CheckGL("screen layer copy");
       Release(vr.screen);
 
-      quad.space = vr.local_space;
-      quad.eyeVisibility = XR_EYE_VISIBILITY_BOTH;
-      quad.subImage.swapchain = vr.screen.handle;
-      quad.subImage.imageRect = {{0, 0}, {w, h}};
-      quad.pose.orientation.w = 1;
-      quad.pose.position = {0, 0, -kScreenDistance};
-      quad.size = {kScreenWidth, kScreenWidth * static_cast<float>(h) / static_cast<float>(w)};
-      // Over the world the layer is premultiplied-alpha; alone it is opaque.
-      quad.layerFlags = vr.overlay_transparent ? XR_COMPOSITION_LAYER_BLEND_TEXTURE_SOURCE_ALPHA_BIT : 0;
+      if (vr.overlay_transparent) {
+        // Flying: the HUD floats nearer, covering the same view angle.
+        quad = FlatLayer(vr.screen, w, h, vr.hud_distance, kScreenWidth * vr.hud_distance / kScreenDistance, true);
+      } else {
+        quad = FlatLayer(vr.screen, w, h, kScreenDistance, kScreenWidth, false);
+      }
       layers.push_back(reinterpret_cast<XrCompositionLayerBaseHeader *>(&quad));
     }
   }
@@ -1289,6 +1318,37 @@ void vr_BeginOverlay() {
   vr.overlay_transparent = true;
   opengl_InvalidateBlendState();
   g3_ForceTransformRefresh();
+}
+
+void vr_BeginReticleLayer() {
+  if (!vr.initialized || !vr.overlay_transparent || !vr.frame_begun || !vr.frame_state.shouldRender ||
+      vr.reticle_acquired) {
+    return;
+  }
+  const int w = gpu_state.screen_width;
+  const int h = gpu_state.screen_height;
+  if (!EnsureSwapchain(vr.reticle, w, h, "crosshair") || !AcquireInto(vr.reticle, vr.reticle_fbo)) {
+    opengl_BindScreenFramebuffer();
+    return;
+  }
+  ClearBound(w, h, 0, 0, 0, 0);
+  glViewport(0, 0, w, h);
+  glScissor(0, 0, w, h);
+  vr.reticle_acquired = true;
+  g3_ForceTransformRefresh();
+  CheckGL("crosshair layer setup");
+}
+
+void vr_EndReticleLayer() {
+  if (!vr.reticle_acquired) {
+    return;
+  }
+  Release(vr.reticle);
+  vr.reticle_acquired = false;
+  vr.reticle_this_frame = true;
+  opengl_BindScreenFramebuffer();
+  g3_ForceTransformRefresh();
+  CheckGL("crosshair layer end");
 }
 
 bool vr_GetControllerState(vr_controller_state *state) {

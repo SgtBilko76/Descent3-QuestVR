@@ -798,6 +798,7 @@
  * $NoKeywords: $
  */
 
+#include <algorithm>
 #include <cstdio>
 #include <cstring>
 
@@ -806,6 +807,7 @@
 #include "game.h"
 #include "render.h"
 #include "descent.h"
+#include "args.h"
 #include "d3vr.h"
 #include "slew.h"
 #include "log.h"
@@ -2522,6 +2524,15 @@ static bool GameRenderWorldVR(object *viewer, bool rear_view) {
   }
   const matrix &o = viewer->orient;
   const bool draw_cockpit = (viewer == Player_object) && HUDShowsCockpit();
+  // The cockpit is drawn closer than modelled (-vrcockpitscale: 1 = original
+  // distance, about 1.5 m) without changing its layout: magnifying the eye's
+  // offset for the cockpit pass is the same as shrinking the cockpit towards
+  // the view origin, which keeps its angular size.
+  static const float cockpit_scale = [] {
+    const int arg = FindArg("-vrcockpitscale");
+    const float v = arg ? static_cast<float>(atof(GameArgs[arg + 1])) : 0.6f;
+    return std::clamp(v, 0.2f, 2.0f);
+  }();
   for (int eye = 0; eye < 2; eye++) {
     vr_eye_view view;
     if (!vr_BeginEyePass(eye, &view)) {
@@ -2537,7 +2548,10 @@ static bool GameRenderWorldVR(object *viewer, bool rear_view) {
     StartFrame(0, 0, view.size, view.size, false);
     GameRenderWorld(viewer, &eye_pos, viewer->roomnum, &eye_orient, view.zoom, rear_view);
     if (draw_cockpit) {
-      GameRenderCockpitVR(eye, view, eye_pos, eye_orient);
+      const float k = 1.0f / cockpit_scale;
+      const float offset[3] = {view.offset[0] * k, view.offset[1] * k, view.offset[2] * k};
+      vector cockpit_eye_pos = viewer->pos + to_world(offset);
+      GameRenderCockpitVR(eye, view, cockpit_eye_pos, eye_orient);
     }
     EndFrame();
     vr_EndEyePass();

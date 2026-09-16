@@ -66,6 +66,12 @@ void vr_EndEyePass();
 // that what is drawn on it next (the HUD) floats over the world.
 void vr_BeginOverlay();
 
+// While flying, what is drawn between these two calls (the crosshair) goes to
+// its own flat layer at the original screen distance, while the rest of the HUD
+// floats nearer (-vrhuddistance). No-ops outside the flying overlay.
+void vr_BeginReticleLayer();
+void vr_EndReticleLayer();
+
 // Touch controller state for flight input (Controls.cpp maps it to ship
 // controls). Returns false when there is no VR input. Menu navigation (pointer,
 // clicks, Escape/Enter) and discrete flight actions (flare, weapon cycling,
@@ -79,6 +85,8 @@ inline bool vr_IsActive() { return false; }
 inline bool vr_BeginEyePass(int, vr_eye_view *) { return false; }
 inline void vr_EndEyePass() {}
 inline void vr_BeginOverlay() {}
+inline void vr_BeginReticleLayer() {}
+inline void vr_EndReticleLayer() {}
 inline bool vr_GetControllerState(vr_controller_state *) { return false; }
 
 #endif

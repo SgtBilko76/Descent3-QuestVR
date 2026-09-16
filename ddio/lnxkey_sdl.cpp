@@ -386,6 +386,24 @@ bool sdlKeyFilter(const SDL_Event *event) {
   return false;
 } // sdlKeyFilter
 
+void ddio_SetTextInput(bool active) {
+#if defined(D3_ANDROID)
+  // On Android, SDL shows the system keyboard (on Quest: the VR overlay
+  // keyboard) and turns what is typed into key events.
+  extern SDL_Window *GSDLWindow;
+  if (!GSDLWindow) {
+    return;
+  }
+  if (active) {
+    SDL_StartTextInput(GSDLWindow);
+  } else {
+    SDL_StopTextInput(GSDLWindow);
+  }
+#else
+  (void)active;
+#endif
+}
+
 bool ddio_sdl_InternalKeyInit(ddio_init_info *init_info) {
   // reset key list
   for (int i = 0; i < DDIO_MAX_KEYS; i++) {

@@ -313,6 +313,11 @@ void ddio_MouseSetLimits(int left, int top, int right, int bottom, int zmin = 0,
 // Moves the absolute mouse position (clamped to the limits), as if the mouse
 // had moved there. Used by pointer-style devices such as VR controllers.
 void ddio_MouseSetPosition(int x, int y);
+
+// Shows or hides the platform's on-screen keyboard while a text field is
+// being edited. Only does something where there is no physical keyboard
+// (Android / Meta Quest).
+void ddio_SetTextInput(bool active);
 void ddio_MouseGetLimits(int *left, int *top, int *right, int *bottom, int *zmin = 0, int *zmax = 0);
 
 // virtual coordinate system for mouse (match to video resolution set for optimal mouse usage.

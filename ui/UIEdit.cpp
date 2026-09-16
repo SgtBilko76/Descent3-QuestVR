@@ -137,6 +137,7 @@
 #include <cstdlib>
 
 #include "UIlib.h"
+#include "ddio.h"
 #include "grtext.h"
 #include "log.h"
 #include "Macros.h"
@@ -231,6 +232,7 @@ void UIEdit::Activate() {
   m_Active = true;
   UI_current_editbox = this;
   m_UpdateCount = false;
+  ddio_SetTextInput(true);
 
   //	mprintf(0, "activating edit box\n");
 }
@@ -242,6 +244,7 @@ void UIEdit::Deactivate() {
   m_Active = false;
   UI_current_editbox = NULL;
   m_Wnd->ResumeHotkeys();
+  ddio_SetTextInput(false);
 }
 
 //	Overrides

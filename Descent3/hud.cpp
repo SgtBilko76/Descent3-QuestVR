@@ -415,6 +415,7 @@
 #include <cstring>
 
 #include "hud.h"
+#include "d3vr.h"
 #include "grdefs.h"
 #include "game.h"
 #include "player.h"
@@ -1225,7 +1226,9 @@ void RenderHUDFrame() {
       RenderHUDItems(Hud_stat_mask);
       RenderCockpit(); // needed to render animated deactivation sequence and should be dormant
       if (Game_toggles.show_reticle) {
+        vr_BeginReticleLayer();
         RenderReticle();
+        vr_EndReticleLayer();
       }
       break;
 
@@ -1233,7 +1236,9 @@ void RenderHUDFrame() {
       RenderHUDItems(Hud_stat_mask);
       RenderCockpit(); // called when cockpit is activating and functioning.
       if (Game_toggles.show_reticle) {
+        vr_BeginReticleLayer();
         RenderReticle();
+        vr_EndReticleLayer();
       }
       break;
 

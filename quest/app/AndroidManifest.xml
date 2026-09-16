@@ -27,6 +27,8 @@
     <!-- Optional hand tracking: without it Horizon refuses to launch the app while
          the controllers are idle. The game itself is played with the controllers. -->
     <uses-feature android:name="oculus.software.handtracking" android:required="false" />
+    <!-- The system keyboard as a VR overlay, for text fields such as the pilot name. -->
+    <uses-feature android:name="oculus.software.overlay_keyboard" android:required="false" />
     <uses-permission android:name="com.oculus.permission.HAND_TRACKING" />
     <!-- OpenXR loader: permissions and runtime broker lookup (from the loader AAR's manifest). -->
     <uses-permission android:name="org.khronos.openxr.permission.OPENXR" />
