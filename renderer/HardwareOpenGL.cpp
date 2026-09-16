@@ -420,6 +420,21 @@ int opengl_Setup(oeApplication *app, const int *width, const int *height) {
   }
 
   if (!GSDLWindow) {
+#if defined(D3_ANDROID)
+    // Horizon OS pauses the app and destroys its surface whenever it is not
+    // visible, e.g. when the headset is not being worn. SDL only notices once
+    // the queued lifecycle events are pumped; it then blocks here until the app
+    // is resumed with a live surface. Without this, window creation fails with
+    // "Could not fetch native window" whenever the app starts in the background.
+    {
+      const Uint64 wait_start = SDL_GetTicks();
+      SDL_PumpEvents();
+      const Uint64 waited = SDL_GetTicks() - wait_start;
+      if (waited > 250) {
+        LOG_INFO.printf("OpenGL: waited %llu ms for the app to become visible", (unsigned long long)waited);
+      }
+    }
+#endif
     int display_num = 0;
     int display_arg = FindArg("-display");
     int display_count = 0;
@@ -715,7 +730,11 @@ int opengl_Init(oeApplication *app, renderer_preferred_state *pref_state) {
 void opengl_Close(const bool just_resizing) {
   CHECK_ERROR(5)
 
-  dglDeleteTextures(textures_.size(), textures_.data());
+  // Only touch GL if a context exists: when setup fails before the GL entry
+  // points are resolved, the dgl* function pointers are still null.
+  if (GSDLGLContext && !textures_.empty()) {
+    dglDeleteTextures(textures_.size(), textures_.data());
+  }
   textures_.clear();
 
   gRenderer.reset();

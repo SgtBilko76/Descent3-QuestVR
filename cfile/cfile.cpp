@@ -92,7 +92,8 @@ void cf_AddDefaultBaseDirectories() {
  * from this module.
  */
 void cf_AddBaseDirectory(const std::filesystem::path &base_directory) {
-  if (std::filesystem::exists(base_directory) && std::filesystem::is_directory(base_directory)) {
+  std::error_code ec;
+  if (std::filesystem::is_directory(base_directory, ec)) {
     Base_directories.push_back(base_directory);
   } else {
     LOG_WARNING << "Ignoring nonexistent base directory: " << base_directory;
@@ -111,14 +112,20 @@ std::filesystem::path cf_LocatePathCaseInsensitiveHelper(const std::filesystem::
                                                          const std::filesystem::path &starting_dir) {
 #ifdef WIN32
   std::filesystem::path result = starting_dir / relative_path;
-  if (std::filesystem::exists(result)) {
+  std::error_code ec;
+  if (std::filesystem::exists(result, ec)) {
     return result;
   } else {
     return {};
   }
 #else
+  // The lookups below use the non-throwing std::filesystem overloads: a path
+  // that exists but cannot be accessed (e.g. EACCES) is "not found", not a
+  // reason to terminate.
+  std::error_code ec;
+
   // Dumb check, maybe there already all ok?
-  if (exists((starting_dir / relative_path))) {
+  if (std::filesystem::exists(starting_dir / relative_path, ec)) {
     return starting_dir / relative_path;
   }
 
@@ -128,16 +135,14 @@ std::filesystem::path cf_LocatePathCaseInsensitiveHelper(const std::filesystem::
   search_file = relative_path.filename();
 
   // If directory does not exist, nothing to search.
-  if (!std::filesystem::is_directory(search_path) || search_file.empty()) {
+  if (!std::filesystem::is_directory(search_path, ec) || search_file.empty()) {
     return {};
   }
 
 
-  // Search component in search_path. Use the non-throwing overload: an
-  // unreadable directory is a "not found", not a reason to terminate.
-  std::error_code dir_ec;
-  auto const &it = std::filesystem::directory_iterator(search_path, dir_ec);
-  if (dir_ec) {
+  // Search component in search_path.
+  auto const &it = std::filesystem::directory_iterator(search_path, ec);
+  if (ec) {
     return {};
   }
 
@@ -168,7 +173,8 @@ std::vector<std::filesystem::path> cf_LocatePathMultiplePathsHelper(const std::f
     ASSERT(("base_directory should be an absolute path.", base_directories_iterator->is_absolute()));
     auto to_append = cf_LocatePathCaseInsensitiveHelper(relative_path, *base_directories_iterator);
     ASSERT(("to_append should be either empty or an absolute path.", to_append.empty() || to_append.is_absolute()));
-    if (std::filesystem::exists(to_append)) {
+    std::error_code ec;
+    if (!to_append.empty() && std::filesystem::exists(to_append, ec)) {
       return_value.push_back(to_append);
       if (stop_after_first_result) {
         break;
@@ -330,7 +336,8 @@ void cf_Close() {
 
 bool cf_SetSearchPath(const std::filesystem::path &path, const std::vector<std::filesystem::path> &ext_list) {
   // Don't add non-existing path into search paths
-  if (!std::filesystem::is_directory(path))
+  std::error_code ec;
+  if (!std::filesystem::is_directory(path, ec))
     return false;
   // Get & store full path
   paths.insert_or_assign(std::filesystem::absolute(path), !ext_list.empty());
@@ -498,7 +505,8 @@ CFILE *open_file_in_directory(const std::filesystem::path &filename, const char 
   CFILE *cfile;
   std::filesystem::path using_filename;
   char tmode[3] = "rb";
-  if (std::filesystem::is_directory(directory)) {
+  std::error_code ec;
+  if (std::filesystem::is_directory(directory, ec)) {
     // Make a full path
     using_filename = directory / filename;
   } else if (filename.is_absolute()) {

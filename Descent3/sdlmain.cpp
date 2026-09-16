@@ -99,6 +99,12 @@ void fatal_signal_handler(int signum) {
 }
 
 void install_signal_handlers() {
+#if defined(D3_ANDROID)
+  // Leave signals to the platform. debuggerd turns a crash into a logged
+  // backtrace (symbolize with quest/tools/symbolize.sh), which this handler's
+  // _exit() would suppress, and ART owns signals such as SIGQUIT.
+  return;
+#endif
   struct sigaction fact{};
 
   memset(&fact, 0, sizeof(fact));
