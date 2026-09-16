@@ -2483,6 +2483,35 @@ void GameRenderWorld(object *viewer, vector *viewer_eye, int viewer_roomnum, mat
     viewer->orient = save_orient;
 }
 
+// VR: draws the cockpit model (a real object in front of the ship) into the
+// current eye pass, so it is seen in stereo instead of on the flat HUD layer.
+static void GameRenderCockpitVR(int eye, const vr_eye_view &view, vector &eye_pos, matrix &eye_orient) {
+  // Gauge text is positioned in pixels, designed for a 640 pixel wide screen
+  // at the HUD's zoom (HUD_RENDER_ZOOM, 0.56). Scale it to this eye's pixels
+  // per unit of view tangent, and let the HUD code see the eye target as the
+  // game window while it draws.
+  constexpr float kHudRenderZoom = 0.56f;
+  const float eye_tan = view.zoom * 0.75f; // see g3_StartFrame
+  const float hud_scale = (view.size / (2.0f * eye_tan)) / (DEFAULT_HUD_WIDTH / (2.0f * kHudRenderZoom));
+
+  const int save_x = Game_window_x, save_y = Game_window_y, save_w = Game_window_w, save_h = Game_window_h;
+  const float save_aspect_x = Hud_aspect_x, save_aspect_y = Hud_aspect_y;
+  Game_window_x = Game_window_y = 0;
+  Game_window_w = Game_window_h = view.size;
+  Hud_aspect_x = Hud_aspect_y = hud_scale;
+
+  g3_StartFrame(&eye_pos, &eye_orient, view.zoom);
+  RenderCockpitEye(eye == 0, eye == 1);
+  g3_EndFrame();
+
+  Game_window_x = save_x;
+  Game_window_y = save_y;
+  Game_window_w = save_w;
+  Game_window_h = save_h;
+  Hud_aspect_x = save_aspect_x;
+  Hud_aspect_y = save_aspect_y;
+}
+
 // VR: renders the world once per eye into the headset's eye buffers. The eye
 // is placed inside the viewer (the cockpit) by the head pose, so the ship still
 // flies on the controls while the player looks around. Returns false if stereo
@@ -2492,6 +2521,7 @@ static bool GameRenderWorldVR(object *viewer, bool rear_view) {
     return false;
   }
   const matrix &o = viewer->orient;
+  const bool draw_cockpit = (viewer == Player_object) && HUDShowsCockpit();
   for (int eye = 0; eye < 2; eye++) {
     vr_eye_view view;
     if (!vr_BeginEyePass(eye, &view)) {
@@ -2506,6 +2536,9 @@ static bool GameRenderWorldVR(object *viewer, bool rear_view) {
 
     StartFrame(0, 0, view.size, view.size, false);
     GameRenderWorld(viewer, &eye_pos, viewer->roomnum, &eye_orient, view.zoom, rear_view);
+    if (draw_cockpit) {
+      GameRenderCockpitVR(eye, view, eye_pos, eye_orient);
+    }
     EndFrame();
     vr_EndEyePass();
   }

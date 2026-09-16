@@ -73,6 +73,11 @@ struct bsp_info;
 //	renders the cockpit.
 void RenderCockpit();
 
+//	VR: renders the cockpit into the current eye's 3D frame. The first eye of a
+//	frame also advances the cockpit's animation; RenderCockpit() then skips that
+//	frame, so the cockpit isn't drawn a second time on the flat HUD layer.
+void RenderCockpitEye(bool first_eye, bool last_eye);
+
 //	initialization of cockpit information.
 void InitCockpit(int ship_index);
 

@@ -444,14 +444,40 @@ void StartCockpitShake(float mag, vector *vec) {
 //	renders the cockpit.
 extern float GetTerrainDynamicScalar(vector *pos, int seg);
 extern void GetRoomDynamicScalar(vector *pos, room *rp, float *r, float *g, float *b);
-void RenderCockpit() {
-  object *player_obj = &Objects[Players[Player_num].objnum];
-  vector view_pos, light_vec;
+// The cockpit's placement and animation state for the current frame. Filled
+// once per frame by UpdateCockpit() and drawn by DrawCockpit(), possibly more
+// than once (VR draws it for each eye).
+namespace {
+struct CockpitFrame {
+  bool visible = false;
+  vector view_pos;
   matrix view_tmat;
-  float view_z, view_y, view_x, keyframe;
-  float light_scalar_r, light_scalar_g, light_scalar_b;
+  vector light_vec;
+  float light_scalar_r = 0, light_scalar_g = 0, light_scalar_b = 0;
   float normalized_time[MAX_SUBOBJECTS];
   bool gauge_reset = false;
+};
+CockpitFrame Cockpit_frame;
+// FrameCount of the last frame whose cockpit the VR eye passes already drew.
+int Cockpit_stereo_frame = -1;
+} // namespace
+
+extern int FrameCount;
+
+// Advances the cockpit's animation and computes where to draw it this frame.
+static void UpdateCockpit() {
+  CockpitFrame &f = Cockpit_frame;
+  f.visible = false;
+  object *player_obj = &Objects[Players[Player_num].objnum];
+  vector &view_pos = f.view_pos;
+  vector &light_vec = f.light_vec;
+  matrix &view_tmat = f.view_tmat;
+  float view_z, view_y, view_x, keyframe;
+  float &light_scalar_r = f.light_scalar_r;
+  float &light_scalar_g = f.light_scalar_g;
+  float &light_scalar_b = f.light_scalar_b;
+  float *normalized_time = f.normalized_time;
+  f.gauge_reset = false;
   //	draw cockpit depending on current state
   if (Cockpit_info.state == COCKPIT_STATE_DORMANT || Cockpit_info.model_num == -1)
     return;
@@ -532,17 +558,46 @@ void RenderCockpit() {
     Cockpit_info.animating = true;
     Cockpit_info.buffet_amp = 0.0f;
   }
+  f.visible = true;
+}
+
+// Draws the cockpit as computed by UpdateCockpit(), into the current 3D frame.
+static void DrawCockpit() {
+  CockpitFrame &f = Cockpit_frame;
+  if (!f.visible) {
+    return;
+  }
   //	draws lower z cockpit, and monitor glares after gauge renderering
   rend_SetZBufferState(0);
-  DrawPolygonModel(&view_pos, &view_tmat, Cockpit_info.model_num, normalized_time, 0, &light_vec, light_scalar_r,
-                   light_scalar_g, light_scalar_b, Cockpit_info.nonlayered_mask, 0, 1);
-  RenderGauges(&view_pos, &view_tmat, normalized_time, (Cockpit_info.animating || Cockpit_info.resized), gauge_reset);
+  DrawPolygonModel(&f.view_pos, &f.view_tmat, Cockpit_info.model_num, f.normalized_time, 0, &f.light_vec,
+                   f.light_scalar_r, f.light_scalar_g, f.light_scalar_b, Cockpit_info.nonlayered_mask, 0, 1);
+  RenderGauges(&f.view_pos, &f.view_tmat, f.normalized_time, (Cockpit_info.animating || Cockpit_info.resized),
+               f.gauge_reset);
   rend_SetZBufferState(0);
-  DrawPolygonModel(&view_pos, &view_tmat, Cockpit_info.model_num, normalized_time, 0, &light_vec, light_scalar_r,
-                   light_scalar_g, light_scalar_b, Cockpit_info.layered_mask, 0, 1);
+  DrawPolygonModel(&f.view_pos, &f.view_tmat, Cockpit_info.model_num, f.normalized_time, 0, &f.light_vec,
+                   f.light_scalar_r, f.light_scalar_g, f.light_scalar_b, Cockpit_info.layered_mask, 0, 1);
+}
 
+void RenderCockpit() {
+  if (Cockpit_stereo_frame == FrameCount) {
+    return; // the VR eye passes have drawn it this frame
+  }
+  UpdateCockpit();
+  DrawCockpit();
   Cockpit_info.resized = false;
 }
+
+void RenderCockpitEye(bool first_eye, bool last_eye) {
+  if (first_eye) {
+    UpdateCockpit();
+    Cockpit_stereo_frame = FrameCount;
+  }
+  DrawCockpit();
+  if (last_eye) {
+    Cockpit_info.resized = false;
+  }
+}
+
 //////////////////////////////////////////////////////////////////////////////
 //
 //	adjusts current keyframe and dormancy

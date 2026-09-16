@@ -1259,6 +1259,18 @@ void RenderHUDFrame() {
 }
 
 // renders hud frame before any graphics are drawn
+bool HUDShowsCockpit() {
+  extern bool Guided_missile_smallview; // from smallviews.cpp
+  extern bool HUD_disabled;             // from GameLoop.cpp
+
+  if (HUD_disabled || (Players[Player_num].guided_obj && !Guided_missile_smallview) ||
+      (Players[Player_num].flags & (PLAYER_FLAGS_ZOOMED | PLAYER_FLAGS_REARVIEW))) {
+    return false;
+  }
+  const tHUDMode mode = GetHUDMode();
+  return mode == HUD_FULLSCREEN || mode == HUD_COCKPIT;
+}
+
 void RenderPreHUDFrame() {
   extern void RenderHUDMsgDirtyRects();
 

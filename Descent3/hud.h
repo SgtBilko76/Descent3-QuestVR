@@ -549,6 +549,9 @@ void SetHUDState(uint16_t hud_mask, uint16_t hud_gr_mask);
 //	the current cockpit mode;
 tHUDMode GetHUDMode();
 
+//	true if this frame's HUD includes the cockpit (see RenderHUDFrame).
+bool HUDShowsCockpit();
+
 //	places an item on the hud
 void AddHUDItem(tHUDItem *item);
 
