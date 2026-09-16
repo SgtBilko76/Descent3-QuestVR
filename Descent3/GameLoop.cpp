@@ -1116,12 +1116,26 @@ void RestoreCameraRearviews() {
 }
 
 void ProcessButtons() {
+  // VR: a trigger pull or A press, made after death (so a trigger that was
+  // held when the ship blew up doesn't skip the death screen).
+  static bool vr_button_was_down = true;
+  bool vr_pressed = false;
+  vr_controller_state vr;
+  if (vr_GetControllerState(&vr)) {
+    const bool down = vr.left_trigger > 0.5f || vr.right_trigger > 0.5f || vr.a;
+    vr_pressed = down && !vr_button_was_down;
+    vr_button_was_down = down;
+  }
+  if (!(Players[Player_num].flags & PLAYER_FLAGS_DEAD) || Total_time_dead < DEATH_RESPAWN_TIME) {
+    vr_pressed = false;
+  }
+
   // If dead, any key not handled above will eand the death sequence
   // this shouldn't be called in ReadPlayerControls since the player is DEAD!
   if (Players[Player_num].flags & PLAYER_FLAGS_DEAD) {
     int x, y;
     PollControls();
-    if (Controller->get_joy_raw_values(&x, &y) || Controller->get_mouse_raw_values(&x, &y)) {
+    if (vr_pressed || Controller->get_joy_raw_values(&x, &y) || Controller->get_mouse_raw_values(&x, &y)) {
       // death.
       LOG_DEBUG << "here?";
 

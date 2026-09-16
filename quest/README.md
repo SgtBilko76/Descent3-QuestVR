@@ -78,6 +78,8 @@ adb shell "cd $DATA && find . -mindepth 1 -type d -exec chmod 2777 {} +"
 | Left stick click | next secondary (hold: headlight) | — |
 | Menu button | pause menu (hold: automap) | back |
 
+After your ship is destroyed, pull a trigger or press A to continue.
+
 In menus and dialogs, point at an item with either controller and pull the
 trigger (or press A). Text fields, such as the pilot name, open the Quest's
 system keyboard.
