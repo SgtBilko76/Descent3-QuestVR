@@ -24,8 +24,14 @@
 #include <tuple>
 #include <vector>
 
+#if defined(D3_GLES)
+// Quest/Android: compile against the real GLES 3.2 headers, so any desktop-only
+// call or enum is a compile error rather than a runtime GL_INVALID_ENUM.
+#include <GLES3/gl32.h>
+#else
 #define GL_GLEXT_PROTOTYPES
 #include <SDL3/SDL_opengl.h>
+#endif
 
 #include "descent.h"
 #include "log.h"
@@ -106,9 +112,7 @@ FnPtr<Ret GLFUNCCALL(Args...)>::FnPtr(std::string_view name, bool optional) : fn
 
 static module *LoadOpenGLDLL(const char *dllname) {
   LOG_INFO << "Loading OpenGL dll...";
-  int rc = SDL_GL_LoadLibrary(dllname[0] ? dllname : nullptr);
-
-  if (rc < 0) {
+  if (!SDL_GL_LoadLibrary(dllname[0] ? dllname : nullptr)) {
     const char *sdlErr = SDL_GetError();
     LOG_ERROR.printf("OpenGL: Couldn't open library [%s]: SDL error [%s].",
                      dllname[0] ? dllname : "system default", sdlErr);
@@ -197,7 +201,6 @@ DYNAEXTERN(glGenRenderbuffers);
 DYNAEXTERN(glRenderbufferStorage);
 
 DYNAEXTERN(glActiveTexture);
-DYNAEXTERN(glMultiTexCoord4f);
 
 #if defined(WIN32)
 DYNAEXTERN(wglCreateContext);

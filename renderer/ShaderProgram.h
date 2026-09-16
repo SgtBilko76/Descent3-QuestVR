@@ -27,6 +27,7 @@
 #include <glm/gtc/type_ptr.hpp>
 #include "dyna_gl.h"
 #include "holder.h"
+#include "ShaderPreamble.h"
 
 template <typename E>
 struct VertexAttrib {
@@ -152,9 +153,9 @@ struct Shader {
       throw std::runtime_error("failed to create shader");
     }
 
-    char const* srcptr = src.data();
-    GLint srclen = src.size();
-    dglShaderSource(id_, 1, &srcptr, &srclen);
+    char const* srcptrs[] = {kShaderPreamble.data(), src.data()};
+    GLint srclens[] = {static_cast<GLint>(kShaderPreamble.size()), static_cast<GLint>(src.size())};
+    dglShaderSource(id_, 2, srcptrs, srclens);
     dglCompileShader(id_);
 
     GLint compile_result;

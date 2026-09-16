@@ -1,5 +1,5 @@
-#version 150 core
-
+// No #version line here: ShaderProgram.h prepends one per platform
+// (GLSL 1.50 core on desktop, GLSL ES 3.20 on Quest).
 /*
 * Descent 3
 * Copyright (C) 2024 Descent Developers
@@ -38,4 +38,6 @@ void main()
     vertex_color = in_color;
     vertex_uv0 = in_uv0;
     vertex_uv1 = in_uv1;
+    // GLES leaves the size of GL_POINTS undefined unless the shader writes it.
+    gl_PointSize = 1.0;
 }

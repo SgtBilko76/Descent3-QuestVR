@@ -250,7 +250,7 @@ int opengl_MakeTextureObject(int tn) {
   dglGenTextures(1, &num);
   textures_.push_back(num);
 
-  dglActiveTexture(GL_TEXTURE0_ARB + tn);
+  dglActiveTexture(GL_TEXTURE0 + tn);
 
   dglBindTexture(GL_TEXTURE_2D, num);
   dglPixelStorei(GL_UNPACK_ALIGNMENT, 2);
@@ -337,12 +337,12 @@ void opengl_SetDefaults() {
   gpu_BindTexture(BAD_BITMAP_HANDLE, MAP_TYPE_BITMAP, 0);
   gpu_BindTexture(BAD_BITMAP_HANDLE, MAP_TYPE_BITMAP, 1);
 
-  dglActiveTexture(GL_TEXTURE0_ARB + 1);
+  dglActiveTexture(GL_TEXTURE0 + 1);
   gRenderer->setTextureEnabled(1, false);
   dglEnable(GL_BLEND);
   dglEnable(GL_DITHER);
   dglBlendFunc(GL_DST_COLOR, GL_ZERO);
-  dglActiveTexture(GL_TEXTURE0_ARB + 0);
+  dglActiveTexture(GL_TEXTURE0 + 0);
 }
 
 extern renderer_preferred_state Render_preferred_state;
@@ -353,16 +353,30 @@ int opengl_Setup(oeApplication *app, const int *width, const int *height) {
 
   SDL_ClearError();
   if (!SDL_WasInit(SDL_INIT_VIDEO)) {
-    const int rc = SDL_Init(SDL_INIT_VIDEO);
-    if (rc != 0) {
+    if (!SDL_Init(SDL_INIT_VIDEO)) {
       char buffer[512];
       snprintf(buffer, sizeof(buffer), "SDL_GetError() reports \"%s\".\n", SDL_GetError());
-      fprintf(stderr, "SDL: SDL_Init() failed! rc == (%d).\n", rc);
+      fprintf(stderr, "SDL: SDL_Init() failed!\n");
       fprintf(stderr, "%s", buffer);
       rend_SetErrorMessage(buffer);
       return (0);
     }
   }
+
+  // Context attributes go first: on EGL platforms (Android) SDL decides which
+  // GL library to load from the requested profile, at load time.
+  SDL_GL_SetAttribute(SDL_GL_RED_SIZE, 8);
+  SDL_GL_SetAttribute(SDL_GL_GREEN_SIZE, 8);
+  SDL_GL_SetAttribute(SDL_GL_BLUE_SIZE, 8);
+  SDL_GL_SetAttribute(SDL_GL_DEPTH_SIZE, 16);
+  SDL_GL_SetAttribute(SDL_GL_DOUBLEBUFFER, 1);
+  SDL_GL_SetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION, 3);
+  SDL_GL_SetAttribute(SDL_GL_CONTEXT_MINOR_VERSION, 2);
+#if defined(D3_GLES)
+  SDL_GL_SetAttribute(SDL_GL_CONTEXT_PROFILE_MASK, SDL_GL_CONTEXT_PROFILE_ES);
+#else
+  SDL_GL_SetAttribute(SDL_GL_CONTEXT_PROFILE_MASK, SDL_GL_CONTEXT_PROFILE_CORE);
+#endif
 
   if (!Already_loaded) {
     char gl_library[256];
@@ -383,7 +397,9 @@ int opengl_Setup(oeApplication *app, const int *width, const int *height) {
     OpenGLDLLHandle = LoadOpenGLDLL(gl_library);
     if (!(OpenGLDLLHandle)) {
       // rcg07072000 last ditch effort...
-#if defined(POSIX)
+#if defined(D3_GLES)
+      strcpy(gl_library, "libGLESv2.so");
+#elif defined(POSIX)
       strcpy(gl_library, "libGL.so.1");
 #else
       strcpy(gl_library, "opengl32.dll");
@@ -402,15 +418,6 @@ int opengl_Setup(oeApplication *app, const int *width, const int *height) {
       return 0;
     } // if
   }
-
-  SDL_GL_SetAttribute(SDL_GL_RED_SIZE, 8);
-  SDL_GL_SetAttribute(SDL_GL_GREEN_SIZE, 8);
-  SDL_GL_SetAttribute(SDL_GL_BLUE_SIZE, 8);
-  SDL_GL_SetAttribute(SDL_GL_DEPTH_SIZE, 16);
-  SDL_GL_SetAttribute(SDL_GL_DOUBLEBUFFER, 1);
-  SDL_GL_SetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION, 3);
-  SDL_GL_SetAttribute(SDL_GL_CONTEXT_MINOR_VERSION, 2);
-  SDL_GL_SetAttribute(SDL_GL_CONTEXT_PROFILE_MASK, SDL_GL_CONTEXT_PROFILE_CORE);
 
   if (!GSDLWindow) {
     int display_num = 0;
@@ -508,7 +515,7 @@ int opengl_Setup(oeApplication *app, const int *width, const int *height) {
   dglRenderbufferStorage(GL_RENDERBUFFER, GL_DEPTH_COMPONENT16, w, h);
   dglFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GL_RENDERBUFFER, GOpenGLRBODepth);
 
-  if (dglCheckFramebufferStatus(GL_FRAMEBUFFER_EXT) != GL_FRAMEBUFFER_COMPLETE_EXT) {
+  if (dglCheckFramebufferStatus(GL_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE) {
     LOG_WARNING << "OpenGL: our framebuffer object is incomplete, giving up";
     dglFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_RENDERBUFFER, 0);
     dglFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GL_RENDERBUFFER, 0);
@@ -769,7 +776,7 @@ void opengl_TranslateBitmapToOpenGL(int texnum, int bm_handle, int map_type, int
   int w, h;
   int size;
 
-  dglActiveTexture(GL_TEXTURE0_ARB + tn);
+  dglActiveTexture(GL_TEXTURE0 + tn);
 
   if (map_type == MAP_TYPE_LIGHTMAP) {
     if (GameLightmaps[bm_handle].flags & LF_BRAND_NEW)
@@ -1000,7 +1007,7 @@ int opengl_MakeBitmapCurrent(int handle, int map_type, int tn) {
   }
 
   if (OpenGL_last_bound[tn] != texnum) {
-    dglActiveTexture(GL_TEXTURE0_ARB + tn);
+    dglActiveTexture(GL_TEXTURE0 + tn);
 
     dglBindTexture(GL_TEXTURE_2D, texnum);
     OpenGL_last_bound[tn] = texnum;
@@ -1029,7 +1036,7 @@ void opengl_MakeWrapTypeCurrent(int handle, int map_type, int tn) {
   if (uwrap == dest_wrap)
     return;
 
-  dglActiveTexture(GL_TEXTURE0_ARB + tn);
+  dglActiveTexture(GL_TEXTURE0 + tn);
 
   OpenGL_sets_this_frame[1]++;
 
@@ -1072,7 +1079,7 @@ void opengl_MakeFilterTypeCurrent(int handle, int map_type, int tn) {
   if (magf == dest_state)
     return;
 
-  dglActiveTexture(GL_TEXTURE0_ARB + tn);
+  dglActiveTexture(GL_TEXTURE0 + tn);
 
   OpenGL_sets_this_frame[2]++;
 
@@ -1366,7 +1373,7 @@ void rend_SetLighting(light_state state) {
   if (state == gpu_state.cur_light_state)
     return; // No redundant state setting
 
-  dglActiveTexture(GL_TEXTURE0_ARB + 0);
+  dglActiveTexture(GL_TEXTURE0 + 0);
 
   OpenGL_sets_this_frame[4]++;
 
@@ -1407,7 +1414,7 @@ void rend_SetTextureType(texture_type state) {
   if (state == gpu_state.cur_texture_type)
     return; // No redundant state setting
 
-  dglActiveTexture(GL_TEXTURE0_ARB + 0);
+  dglActiveTexture(GL_TEXTURE0 + 0);
   OpenGL_sets_this_frame[3]++;
 
   switch (state) {
@@ -1627,7 +1634,7 @@ void rend_SetAlphaType(int8_t atype) {
   if (atype == gpu_state.cur_alpha_type)
     return; // don't set it redundantly
 
-  dglActiveTexture(GL_TEXTURE0_ARB + 0);
+  dglActiveTexture(GL_TEXTURE0 + 0);
   OpenGL_sets_this_frame[6]++;
 
   if (atype == AT_ALWAYS) {
