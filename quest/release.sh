@@ -42,18 +42,22 @@ if [[ ! -f "$KEY_DIR/release.keystore" ]]; then
   chmod 600 "$KEY_DIR/release.keystore" "$KEY_DIR/signing.env"
   echo "    BACK UP quest/release/: updates must be signed with this key."
 fi
-set -a
-source "$KEY_DIR/signing.env"
-set +a
 
 echo "==> building $NAME (version code $VERSION_CODE)"
 BUILD_DIR="$D3_ROOT/builds/quest-release"
 rm -rf "$BUILD_DIR"
 BUILD_DIR="$BUILD_DIR" "$D3_ROOT/quest/build.sh" > "$D3_ROOT/builds/quest-release.log" 2>&1 \
   || { echo "build failed, see builds/quest-release.log" >&2; exit 1; }
-BUILD_DIR="$BUILD_DIR" OUT_DIR="$BUILD_DIR/apk-release" APK_MODE=vr APK_DEBUGGABLE=0 \
-  APK_VERSION_NAME="$VERSION" APK_VERSION_CODE="$VERSION_CODE" APK_NAME="$NAME.apk" \
-  KEYSTORE="$KEY_DIR/release.keystore" "$D3_ROOT/quest/build_apk.sh" >> "$D3_ROOT/builds/quest-release.log" 2>&1
+# Signing settings only for this step (the dev build above uses its own key).
+(
+  set -a
+  source "$KEY_DIR/signing.env"
+  set +a
+  BUILD_DIR="$BUILD_DIR" OUT_DIR="$BUILD_DIR/apk-release" APK_MODE=vr APK_DEBUGGABLE=0 \
+    APK_VERSION_NAME="$VERSION" APK_VERSION_CODE="$VERSION_CODE" APK_NAME="$NAME.apk" \
+    KEYSTORE="$KEY_DIR/release.keystore" "$D3_ROOT/quest/build_apk.sh"
+) >> "$D3_ROOT/builds/quest-release.log" 2>&1 \
+  || { echo "signing failed, see builds/quest-release.log" >&2; exit 1; }
 
 echo "==> packaging"
 OUT="$D3_ROOT/builds/release/$NAME"
