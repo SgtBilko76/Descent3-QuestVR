@@ -123,6 +123,7 @@ struct VRState {
   bool session_running = false;
   // Extension entry points; the loader only exports core functions.
   PFN_xrRequestDisplayRefreshRateFB request_refresh_rate = nullptr;
+  PFN_xrEnumerateDisplayRefreshRatesFB enumerate_refresh_rates = nullptr;
   PFN_xrPerfSettingsSetPerformanceLevelEXT set_perf_level = nullptr;
 
   // Frame.
@@ -157,6 +158,9 @@ struct VRState {
   int stat_frames = 0;
   int stat_stereo = 0;
   float stat_start = -1;
+  uint64_t stat_wait_ns = 0;   // blocked in xrWaitFrame (headroom)
+  uint64_t stat_eyes_ns = 0;   // CPU time submitting the two eye passes
+  uint64_t eye_pass_start = 0;
 };
 
 VRState vr;
@@ -175,6 +179,71 @@ bool XrOk(XrResult r, const char *what) {
   LOG_ERROR.printf("VR: %s failed: %s (%d)", what, name, static_cast<int>(r));
   return false;
 }
+
+// Logs and clears GL errors raised by this module's direct GL calls, so they
+// are not blamed on the engine's next (checked) GL call.
+void CheckGL(const char *where) {
+  for (GLenum err = glGetError(); err != GL_NO_ERROR; err = glGetError()) {
+    static int reported = 0;
+    if (reported++ < 20) {
+      LOG_ERROR.printf("VR: GL error 0x%x in %s", err, where);
+    }
+  }
+}
+
+// GL state the engine caches (it skips binds it believes are redundant). The
+// Meta runtime changes some of it inside OpenXR calls on our context: it
+// unbinds texture unit 0 in xrBeginFrame and xrCreateSwapchain. The engine then
+// uploaded new textures (e.g. when a robot came into view) into the wrong
+// texture object and drew garbage. Every runtime call that may touch GL is
+// therefore wrapped to restore this state.
+struct GLStateSnapshot {
+  GLint active_texture = 0;
+  GLint texture[2] = {0, 0};
+  GLint array_buffer = 0;
+  GLint vertex_array = 0;
+  GLint program = 0;
+  GLint unpack_alignment = 0;
+  GLint framebuffer = 0;
+
+  static GLStateSnapshot Take() {
+    GLStateSnapshot s;
+    glGetIntegerv(GL_ACTIVE_TEXTURE, &s.active_texture);
+    for (int unit = 0; unit < 2; unit++) {
+      glActiveTexture(GL_TEXTURE0 + unit);
+      glGetIntegerv(GL_TEXTURE_BINDING_2D, &s.texture[unit]);
+    }
+    glActiveTexture(s.active_texture);
+    glGetIntegerv(GL_ARRAY_BUFFER_BINDING, &s.array_buffer);
+    glGetIntegerv(GL_VERTEX_ARRAY_BINDING, &s.vertex_array);
+    glGetIntegerv(GL_CURRENT_PROGRAM, &s.program);
+    glGetIntegerv(GL_UNPACK_ALIGNMENT, &s.unpack_alignment);
+    glGetIntegerv(GL_FRAMEBUFFER_BINDING, &s.framebuffer);
+    return s;
+  }
+
+  void Restore() const {
+    for (int unit = 0; unit < 2; unit++) {
+      glActiveTexture(GL_TEXTURE0 + unit);
+      glBindTexture(GL_TEXTURE_2D, texture[unit]);
+    }
+    glActiveTexture(active_texture);
+    glBindVertexArray(vertex_array);
+    glBindBuffer(GL_ARRAY_BUFFER, array_buffer);
+    glUseProgram(program);
+    glPixelStorei(GL_UNPACK_ALIGNMENT, unpack_alignment);
+    glBindFramebuffer(GL_FRAMEBUFFER, framebuffer);
+  }
+};
+
+// Runs a runtime call that may touch GL, then puts the engine's GL state back.
+#define XR_GL_CALL(expr)                                                                                           \
+  [&] {                                                                                                            \
+    const GLStateSnapshot saved_ = GLStateSnapshot::Take();                                                        \
+    auto result_ = (expr);                                                                                         \
+    saved_.Restore();                                                                                              \
+    return result_;                                                                                                \
+  }()
 
 template <typename Fn>
 Fn GetProc(XrInstance instance, const char *name) {
@@ -239,14 +308,14 @@ bool CreateSwapchain(Swapchain &sc, int w, int h) {
   info.faceCount = 1;
   info.arraySize = 1;
   info.mipCount = 1;
-  if (!XrOk(xrCreateSwapchain(vr.session, &info, &sc.handle), "xrCreateSwapchain")) {
+  if (!XrOk(XR_GL_CALL(xrCreateSwapchain(vr.session, &info, &sc.handle)), "xrCreateSwapchain")) {
     return false;
   }
   uint32_t count = 0;
   xrEnumerateSwapchainImages(sc.handle, 0, &count, nullptr);
   sc.images.assign(count, XrSwapchainImageOpenGLESKHR{XR_TYPE_SWAPCHAIN_IMAGE_OPENGL_ES_KHR});
-  if (!XrOk(xrEnumerateSwapchainImages(sc.handle, count, &count,
-                                       reinterpret_cast<XrSwapchainImageBaseHeader *>(sc.images.data())),
+  if (!XrOk(XR_GL_CALL(xrEnumerateSwapchainImages(sc.handle, count, &count,
+                                                  reinterpret_cast<XrSwapchainImageBaseHeader *>(sc.images.data()))),
             "xrEnumerateSwapchainImages")) {
     return false;
   }
@@ -266,12 +335,13 @@ void DestroySwapchain(Swapchain &sc) {
 GLuint AcquireInto(Swapchain &sc, GLuint fbo) {
   uint32_t index = 0;
   XrSwapchainImageAcquireInfo acquire{XR_TYPE_SWAPCHAIN_IMAGE_ACQUIRE_INFO};
-  if (!XrOk(xrAcquireSwapchainImage(sc.handle, &acquire, &index), "xrAcquireSwapchainImage")) {
+  if (!XrOk(XR_GL_CALL(xrAcquireSwapchainImage(sc.handle, &acquire, &index)),
+            "xrAcquireSwapchainImage")) {
     return 0;
   }
   XrSwapchainImageWaitInfo wait{XR_TYPE_SWAPCHAIN_IMAGE_WAIT_INFO};
   wait.timeout = XR_INFINITE_DURATION;
-  if (!XrOk(xrWaitSwapchainImage(sc.handle, &wait), "xrWaitSwapchainImage")) {
+  if (!XrOk(XR_GL_CALL(xrWaitSwapchainImage(sc.handle, &wait)), "xrWaitSwapchainImage")) {
     return 0;
   }
   const GLuint tex = sc.images[index].image;
@@ -294,7 +364,8 @@ GLuint AcquireInto(Swapchain &sc, GLuint fbo) {
 
 void Release(Swapchain &sc) {
   XrSwapchainImageReleaseInfo release{XR_TYPE_SWAPCHAIN_IMAGE_RELEASE_INFO};
-  XrOk(xrReleaseSwapchainImage(sc.handle, &release), "xrReleaseSwapchainImage");
+  XrOk(XR_GL_CALL(xrReleaseSwapchainImage(sc.handle, &release)),
+       "xrReleaseSwapchainImage");
 }
 
 // Clears the bound framebuffer, independent of the engine's cached GL state.
@@ -612,6 +683,8 @@ void PollInput() {
 // ---------------------------------------------------------------------------
 // Session and frames
 
+void SetRefreshRate(float wanted);
+
 void HandleEvents() {
   XrEventDataBuffer event{XR_TYPE_EVENT_DATA_BUFFER};
   while (xrPollEvent(vr.instance, &event) == XR_SUCCESS) {
@@ -625,9 +698,8 @@ void HandleEvents() {
         XrSessionBeginInfo begin{XR_TYPE_SESSION_BEGIN_INFO};
         begin.primaryViewConfigurationType = XR_VIEW_CONFIGURATION_TYPE_PRIMARY_STEREO;
         vr.session_running = XrOk(xrBeginSession(vr.session, &begin), "xrBeginSession");
-        if (vr.session_running && vr.request_refresh_rate) {
-          const float hz = ArgFloat("-vrhz", 72.0f);
-          XrOk(vr.request_refresh_rate(vr.session, hz), "xrRequestDisplayRefreshRateFB");
+        if (vr.session_running) {
+          SetRefreshRate(ArgFloat("-vrhz", 90.0f));
         }
         if (vr.session_running && vr.set_perf_level) {
           vr.set_perf_level(vr.session, XR_PERF_SETTINGS_DOMAIN_CPU_EXT, XR_PERF_SETTINGS_LEVEL_SUSTAINED_HIGH_EXT);
@@ -667,6 +739,28 @@ void HandleEvents() {
   }
 }
 
+// Requests the highest supported display rate not above `wanted`.
+void SetRefreshRate(float wanted) {
+  if (!vr.request_refresh_rate || !vr.enumerate_refresh_rates) {
+    return;
+  }
+  uint32_t count = 0;
+  vr.enumerate_refresh_rates(vr.session, 0, &count, nullptr);
+  std::vector<float> rates(count);
+  vr.enumerate_refresh_rates(vr.session, count, &count, rates.data());
+  float best = 0;
+  std::string list;
+  for (float r : rates) {
+    list += std::to_string(static_cast<int>(r + 0.5f)) + " ";
+    if (r <= wanted + 0.5f && r > best) {
+      best = r;
+    }
+  }
+  if (best > 0 && XrOk(vr.request_refresh_rate(vr.session, best), "xrRequestDisplayRefreshRateFB")) {
+    LOG_INFO.printf("VR: display at %.0f Hz (available: %s)", best, list.c_str());
+  }
+}
+
 bool BeginFrame() {
   if (vr.frame_begun) {
     return true;
@@ -677,11 +771,13 @@ bool BeginFrame() {
   }
   vr.frame_state = XrFrameState{XR_TYPE_FRAME_STATE};
   XrFrameWaitInfo wait{XR_TYPE_FRAME_WAIT_INFO};
-  if (!XrOk(xrWaitFrame(vr.session, &wait, &vr.frame_state), "xrWaitFrame")) {
+  const uint64_t wait_start = SDL_GetTicksNS();
+  if (!XrOk(XR_GL_CALL(xrWaitFrame(vr.session, &wait, &vr.frame_state)), "xrWaitFrame")) {
     return false;
   }
+  vr.stat_wait_ns += SDL_GetTicksNS() - wait_start;
   XrFrameBeginInfo begin{XR_TYPE_FRAME_BEGIN_INFO};
-  if (!XrOk(xrBeginFrame(vr.session, &begin), "xrBeginFrame")) {
+  if (!XrOk(XR_GL_CALL(xrBeginFrame(vr.session, &begin)), "xrBeginFrame")) {
     return false;
   }
   vr.frame_begun = true;
@@ -815,6 +911,8 @@ bool vrgl_Init() {
   if (has_refresh_rate) {
     vr.request_refresh_rate =
         GetProc<PFN_xrRequestDisplayRefreshRateFB>(vr.instance, "xrRequestDisplayRefreshRateFB");
+    vr.enumerate_refresh_rates =
+        GetProc<PFN_xrEnumerateDisplayRefreshRatesFB>(vr.instance, "xrEnumerateDisplayRefreshRatesFB");
   }
   if (has_perf_settings) {
     vr.set_perf_level =
@@ -849,7 +947,7 @@ bool vrgl_Init() {
   XrSessionCreateInfo session{XR_TYPE_SESSION_CREATE_INFO};
   session.next = &binding;
   session.systemId = vr.system;
-  if (!XrOk(xrCreateSession(vr.instance, &session, &vr.session), "xrCreateSession")) {
+  if (!XrOk(XR_GL_CALL(xrCreateSession(vr.instance, &session, &vr.session)), "xrCreateSession")) {
     return false;
   }
 
@@ -977,6 +1075,7 @@ bool vrgl_Present(unsigned int screen_fbo, int w, int h) {
       glBindFramebuffer(GL_DRAW_FRAMEBUFFER, vr.screen_fbo);
       glDisable(GL_SCISSOR_TEST);
       glBlitFramebuffer(0, 0, w, h, 0, 0, w, h, GL_COLOR_BUFFER_BIT, GL_NEAREST);
+      CheckGL("screen layer copy");
       Release(vr.screen);
 
       quad.space = vr.local_space;
@@ -997,7 +1096,7 @@ bool vrgl_Present(unsigned int screen_fbo, int w, int h) {
   end.environmentBlendMode = XR_ENVIRONMENT_BLEND_MODE_OPAQUE;
   end.layerCount = static_cast<uint32_t>(layers.size());
   end.layers = layers.data();
-  XrOk(xrEndFrame(vr.session, &end), "xrEndFrame");
+  XrOk(XR_GL_CALL(xrEndFrame(vr.session, &end)), "xrEndFrame");
   vr.frame_begun = false;
 
   vr.world_last_frame = vr.world_this_frame;
@@ -1007,9 +1106,12 @@ bool vrgl_Present(unsigned int screen_fbo, int w, int h) {
   if (vr.stat_start < 0) {
     vr.stat_start = vr.time;
   } else if (vr.time - vr.stat_start >= 5.0f) {
-    LOG_INFO.printf("VR: %.1f fps (%d%% stereo)", vr.stat_frames / (vr.time - vr.stat_start),
-                    100 * vr.stat_stereo / vr.stat_frames);
+    LOG_INFO.printf("VR: %.1f fps (%d%% stereo), per frame: %.1f ms waiting, %.1f ms eye passes",
+                    vr.stat_frames / (vr.time - vr.stat_start), 100 * vr.stat_stereo / vr.stat_frames,
+                    vr.stat_wait_ns / 1e6 / vr.stat_frames,
+                    vr.stat_stereo ? vr.stat_eyes_ns / 1e6 / vr.stat_stereo : 0.0);
     vr.stat_frames = vr.stat_stereo = 0;
+    vr.stat_wait_ns = vr.stat_eyes_ns = 0;
     vr.stat_start = vr.time;
   }
   if (vr.overlay_transparent) {
@@ -1017,6 +1119,7 @@ bool vrgl_Present(unsigned int screen_fbo, int w, int h) {
     opengl_InvalidateBlendState();
   }
   opengl_BindScreenFramebuffer();
+  CheckGL("present");
 
   // Pace the engine to the headset and read the controllers for the next frame.
   BeginFrame();
@@ -1039,8 +1142,12 @@ bool vr_BeginEyePass(int eye, vr_eye_view *view) {
     return false;
   }
   ClearBound(vr.eye_size, vr.eye_size, 0, 0, 0, 1);
+  CheckGL("eye pass setup");
 
   vr.active_eye = eye;
+  if (eye == 0) {
+    vr.eye_pass_start = SDL_GetTicksNS();
+  }
   vr.saved_screen_w = gpu_state.screen_width;
   vr.saved_screen_h = gpu_state.screen_height;
   gpu_state.screen_width = vr.eye_size;
@@ -1069,6 +1176,10 @@ void vr_EndEyePass() {
   gpu_state.screen_height = vr.saved_screen_h;
   vr.active_eye = -1;
   vr.world_this_frame = true;
+  CheckGL("eye pass end");
+  if (vr.eye_rendered[0] && vr.eye_rendered[1]) {
+    vr.stat_eyes_ns += SDL_GetTicksNS() - vr.eye_pass_start;
+  }
   opengl_BindScreenFramebuffer();
   g3_ForceTransformRefresh();
 }
@@ -1080,6 +1191,7 @@ void vr_BeginOverlay() {
   opengl_BindScreenFramebuffer();
   ClearBound(gpu_state.screen_width, gpu_state.screen_height, 0, 0, 0, 0);
   opengl_BindScreenFramebuffer(); // restores the engine's viewport
+  CheckGL("overlay setup");
   vr.overlay_transparent = true;
   opengl_InvalidateBlendState();
   g3_ForceTransformRefresh();

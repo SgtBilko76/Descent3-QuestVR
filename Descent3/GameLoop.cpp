@@ -3099,7 +3099,8 @@ void GameFrame(void) {
     int64_t current_timer;
     uint32_t sleeptime;
     current_timer = timer_GetMSTime();
-    if ((current_timer - last_timer) < Min_allowed_frametime) {
+    // In VR the headset paces frames (xrWaitFrame); an extra cap only drops frames.
+    if (!vr_IsActive() && (current_timer - last_timer) < Min_allowed_frametime) {
       sleeptime = (uint32_t)Min_allowed_frametime - (current_timer - last_timer);
       D3::ChronoTimer::SleepMS(sleeptime);
     }

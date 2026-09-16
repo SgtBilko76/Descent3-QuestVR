@@ -24,6 +24,10 @@
 
     <!-- VR-BEGIN -->
     <uses-feature android:name="android.hardware.vr.headtracking" android:required="true" android:version="1" />
+    <!-- Optional hand tracking: without it Horizon refuses to launch the app while
+         the controllers are idle. The game itself is played with the controllers. -->
+    <uses-feature android:name="oculus.software.handtracking" android:required="false" />
+    <uses-permission android:name="com.oculus.permission.HAND_TRACKING" />
     <!-- OpenXR loader: permissions and runtime broker lookup (from the loader AAR's manifest). -->
     <uses-permission android:name="org.khronos.openxr.permission.OPENXR" />
     <uses-permission android:name="org.khronos.openxr.permission.OPENXR_SYSTEM" />

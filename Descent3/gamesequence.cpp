@@ -1383,6 +1383,10 @@ bool DoLevelIntro() {
 #ifdef STEALTH // DAJ just get started
   return true;
 #endif
+  // Development/testing: go straight into the level.
+  if (FindArg("-skipbriefings")) {
+    return true;
+  }
   //	if this level has a movie:
   if (lvl->flags & LVLFLAG_STARTMOVIE) {
     DoMissionMovie(Current_mission.levels[Current_mission.cur_level - 1].moviename);
