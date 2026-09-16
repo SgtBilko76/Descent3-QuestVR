@@ -80,8 +80,15 @@ adb shell "cd $DATA && find . -mindepth 1 -type d -exec chmod 2777 {} +"
 
 After your ship is destroyed, pull a trigger or press A to continue.
 
-In menus and dialogs, point at an item with either controller and pull the
-trigger (or press A). Text fields, such as the pilot name, open the Quest's
+In menus and dialogs:
+
+| | |
+|---|---|
+| Left stick | previous / next item |
+| Right stick | move within lists and menus |
+| Trigger, A or X | select |
+| B or menu button | back |
+ Text fields, such as the pilot name, open the Quest's
 system keyboard.
 Recenter the view with the Meta button (hold).
 

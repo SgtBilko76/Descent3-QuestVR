@@ -77,6 +77,8 @@ constexpr float kScreenWidth = 1.8f;      // meters (about 62 degrees wide)
 constexpr float kLongPressSeconds = 0.5f;
 constexpr float kStickPress = 0.6f;       // stick deflection that counts as a key press...
 constexpr float kStickRelease = 0.4f;     // ...and back below this releases it
+constexpr float kNavRepeatDelay = 0.45f;  // menu navigation repeat while a stick is held
+constexpr float kNavRepeatInterval = 0.15f;
 
 struct Swapchain {
   XrSwapchain handle = XR_NULL_HANDLE;
@@ -93,24 +95,21 @@ struct Input {
   XrAction trigger = XR_NULL_HANDLE;     // float, both hands
   XrAction grip = XR_NULL_HANDLE;        // float, both hands
   XrAction stick_click = XR_NULL_HANDLE; // bool, both hands
-  XrAction aim = XR_NULL_HANDLE;         // pose, both hands
   XrAction a = XR_NULL_HANDLE, b = XR_NULL_HANDLE, x = XR_NULL_HANDLE, y = XR_NULL_HANDLE;
   XrAction menu = XR_NULL_HANDLE;
   XrPath hand[2] = {XR_NULL_PATH, XR_NULL_PATH};
-  XrSpace aim_space[2] = {XR_NULL_HANDLE, XR_NULL_HANDLE};
 
   vr_controller_state state{};
   bool click_down[2] = {false, false};    // thumbstick clicks, last frame
 
   // Discrete-action bookkeeping.
-  int pointer_hand = kRight;
-  bool mouse_down = false;
   std::vector<SDL_Keycode> held_keys;           // keys currently pressed on the engine's behalf
   std::vector<SDL_Keycode> release_next_frame;  // taps: released one frame after the press
   // Tap/hold buttons (see TapHold): press time and whether the hold fired.
   float press_start[4] = {-1, -1, -1, -1};
   bool hold_fired[4] = {false, false, false, false};
-  int stick_dir[2] = {0, 0};                    // menu-mode arrow key currently held per stick
+  int nav_dir[2] = {0, 0};                      // menu navigation direction held per stick
+  float nav_next[2] = {0, 0};                   // time of the next repeat
 };
 
 struct VRState {
@@ -139,8 +138,6 @@ struct VRState {
   bool world_this_frame = false;
   bool world_last_frame = false;
   bool menu_active = false;         // a game dialog is open over the world
-  float screen_distance = 1.5f;     // where the screen layer was last shown
-  float screen_width = 1.8f;
   bool overlay_transparent = false;
 
   // Rendering.
@@ -521,7 +518,6 @@ bool InitInput() {
   in.trigger = CreateAction("trigger", "Trigger", XR_ACTION_TYPE_FLOAT_INPUT, true);
   in.grip = CreateAction("grip", "Grip", XR_ACTION_TYPE_FLOAT_INPUT, true);
   in.stick_click = CreateAction("stick_click", "Thumbstick click", XR_ACTION_TYPE_BOOLEAN_INPUT, true);
-  in.aim = CreateAction("aim", "Pointer", XR_ACTION_TYPE_POSE_INPUT, true);
   in.a = CreateAction("button_a", "A", XR_ACTION_TYPE_BOOLEAN_INPUT, false);
   in.b = CreateAction("button_b", "B", XR_ACTION_TYPE_BOOLEAN_INPUT, false);
   in.x = CreateAction("button_x", "X", XR_ACTION_TYPE_BOOLEAN_INPUT, false);
@@ -537,8 +533,6 @@ bool InitInput() {
       {in.grip, "/user/hand/right/input/squeeze/value"},
       {in.stick_click, "/user/hand/left/input/thumbstick/click"},
       {in.stick_click, "/user/hand/right/input/thumbstick/click"},
-      {in.aim, "/user/hand/left/input/aim/pose"},
-      {in.aim, "/user/hand/right/input/aim/pose"},
       {in.a, "/user/hand/right/input/a/click"},
       {in.b, "/user/hand/right/input/b/click"},
       {in.x, "/user/hand/left/input/x/click"},
@@ -555,14 +549,6 @@ bool InitInput() {
   profile.countSuggestedBindings = static_cast<uint32_t>(suggested.size());
   if (!XrOk(xrSuggestInteractionProfileBindings(vr.instance, &profile), "xrSuggestInteractionProfileBindings")) {
     return false;
-  }
-
-  for (int h = 0; h < 2; h++) {
-    XrActionSpaceCreateInfo space{XR_TYPE_ACTION_SPACE_CREATE_INFO};
-    space.action = in.aim;
-    space.subactionPath = in.hand[h];
-    space.poseInActionSpace.orientation.w = 1;
-    XrOk(xrCreateActionSpace(vr.session, &space, &in.aim_space[h]), "xrCreateActionSpace");
   }
 
   XrSessionActionSetsAttachInfo attach{XR_TYPE_SESSION_ACTION_SETS_ATTACH_INFO};
@@ -626,75 +612,51 @@ void TapKey(SDL_Keycode key) {
   vr.input.release_next_frame.push_back(key);
 }
 
-void SendMouseButton(bool down) {
-  if (vr.input.mouse_down == down) {
-    return;
-  }
-  vr.input.mouse_down = down;
-  SDL_Event e{};
-  e.type = down ? SDL_EVENT_MOUSE_BUTTON_DOWN : SDL_EVENT_MOUSE_BUTTON_UP;
-  e.button.button = SDL_BUTTON_LEFT;
-  e.button.down = down;
-  e.button.clicks = 1;
-  e.button.timestamp = SDL_GetTicksNS();
-  SDL_PushEvent(&e);
-}
-
 void ReleaseAll() {
   for (SDL_Keycode key : std::vector<SDL_Keycode>(vr.input.held_keys)) {
     HoldKey(key, false);
   }
-  SendMouseButton(false);
-  vr.input.stick_dir[0] = vr.input.stick_dir[1] = 0;
+  vr.input.nav_dir[0] = vr.input.nav_dir[1] = 0;
 }
 
-// Points the engine's mouse at where the controller ray hits the flat screen.
-void UpdatePointer(int hand, int screen_w, int screen_h) {
-  const float distance = vr.screen_distance;
-  const float width = vr.screen_width;
-  XrSpaceLocation loc{XR_TYPE_SPACE_LOCATION};
-  if (XR_FAILED(xrLocateSpace(vr.input.aim_space[hand], vr.local_space, vr.frame_state.predictedDisplayTime, &loc)) ||
-      !(loc.locationFlags & XR_SPACE_LOCATION_POSITION_VALID_BIT) ||
-      !(loc.locationFlags & XR_SPACE_LOCATION_ORIENTATION_VALID_BIT)) {
-    return;
+// A menu navigation key, optionally with Shift held.
+struct NavKey {
+  SDL_Keycode key;
+  bool shift;
+};
+
+void TapNavKey(const NavKey &nav) {
+  if (nav.shift) {
+    SendKey(SDLK_LSHIFT, true);
   }
-  const XrVector3f dir = Rotate(loc.pose.orientation, {0, 0, -1});
-  if (dir.z >= -1e-4f) {
-    return; // pointing away from the screen
+  TapKey(nav.key);
+  if (nav.shift) {
+    vr.input.release_next_frame.push_back(SDLK_LSHIFT); // released after the key
   }
-  const float t = (-distance - loc.pose.position.z) / dir.z;
-  const float hx = loc.pose.position.x + dir.x * t;
-  const float hy = loc.pose.position.y + dir.y * t;
-  const float screen_h_m = width * static_cast<float>(screen_h) / static_cast<float>(screen_w);
-  const float u = hx / width + 0.5f;
-  const float v = 0.5f - hy / screen_h_m;
-  if (u < 0 || u > 1 || v < 0 || v > 1) {
-    return;
-  }
-  ddio_MouseSetPosition(static_cast<int>(u * screen_w), static_cast<int>(v * screen_h));
 }
 
-// Maps a stick to one held arrow key (menus).
-void StickToArrows(int hand, const float stick[2]) {
-  int &cur = vr.input.stick_dir[hand];
-  const float mag = std::max(std::fabs(stick[0]), std::fabs(stick[1]));
+// Menu navigation with a stick: one key press when it is pushed in a
+// direction, repeating while it is held. keys[] is indexed up/right/down/left.
+void StickNav(int stick, const float v[2], const NavKey keys[4]) {
+  Input &in = vr.input;
+  int &cur = in.nav_dir[stick];
+  const float mag = std::max(std::fabs(v[0]), std::fabs(v[1]));
   int want = cur;
-  if (cur == 0 && mag > kStickPress) {
-    want = std::fabs(stick[0]) > std::fabs(stick[1]) ? (stick[0] > 0 ? 2 : 4) : (stick[1] > 0 ? 1 : 3);
-  } else if (cur != 0 && mag < kStickRelease) {
+  if (mag < kStickRelease) {
     want = 0;
+  } else if (mag > kStickPress) {
+    want = std::fabs(v[0]) > std::fabs(v[1]) ? (v[0] > 0 ? 2 : 4) : (v[1] > 0 ? 1 : 3);
   }
-  if (want == cur) {
-    return;
+  if (want != cur) {
+    cur = want;
+    if (cur) {
+      TapNavKey(keys[cur - 1]);
+      in.nav_next[stick] = vr.time + kNavRepeatDelay;
+    }
+  } else if (cur && vr.time >= in.nav_next[stick]) {
+    TapNavKey(keys[cur - 1]);
+    in.nav_next[stick] = vr.time + kNavRepeatInterval;
   }
-  static constexpr SDL_Keycode keys[] = {0, SDLK_UP, SDLK_RIGHT, SDLK_DOWN, SDLK_LEFT};
-  if (cur) {
-    HoldKey(keys[cur], false);
-  }
-  if (want) {
-    HoldKey(keys[want], true);
-  }
-  cur = want;
 }
 
 enum TapHoldButton { kRightStickClick, kLeftStickClick, kButtonB, kMenuButton };
@@ -777,20 +739,18 @@ void PollInput() {
     TapHold(kRightStickClick, click[kRight], SDLK_RETURN, SDLK_APOSTROPHE); // countermeasure: drop / next
     TapHold(kLeftStickClick, click[kLeft], SDLK_PERIOD, SDLK_H);        // next secondary / headlight
   } else {
-    // Menus: laser pointer on the flat screen, trigger or A clicks,
-    // B backs out, X confirms, sticks send arrow keys.
-    if (s.left_trigger > 0.5f && s.right_trigger < 0.5f) {
-      in.pointer_hand = kLeft;
-    } else if (s.right_trigger > 0.5f && s.left_trigger < 0.5f) {
-      in.pointer_hand = kRight;
-    }
-    UpdatePointer(in.pointer_hand, gpu_state.screen_width, gpu_state.screen_height);
-    const bool press = (in.pointer_hand == kLeft ? s.left_trigger : s.right_trigger) > 0.5f || s.a;
-    SendMouseButton(press);
-    HoldKey(SDLK_ESCAPE, menu || s.b);
-    HoldKey(SDLK_RETURN, s.x);
-    StickToArrows(kLeft, s.left_stick);
-    StickToArrows(kRight, s.right_stick);
+    // Menus are driven like a keyboard (the UI has focus navigation); there
+    // is no pointer. The mouse is parked in a corner so it can't interfere,
+    // and its cursor isn't drawn in VR.
+    ddio_MouseSetPosition(0, 0);
+    HoldKey(SDLK_RETURN, s.a || s.x || s.left_trigger > 0.5f || s.right_trigger > 0.5f);  // select
+    HoldKey(SDLK_ESCAPE, menu || s.b);                                                    // back
+    static constexpr NavKey kFocusKeys[4] = {
+        {SDLK_TAB, true}, {SDLK_TAB, false}, {SDLK_TAB, false}, {SDLK_TAB, true}};        // previous/next item
+    static constexpr NavKey kArrowKeys[4] = {
+        {SDLK_UP, false}, {SDLK_RIGHT, false}, {SDLK_DOWN, false}, {SDLK_LEFT, false}};
+    StickNav(kLeft, s.left_stick, kFocusKeys);
+    StickNav(kRight, s.right_stick, kArrowKeys);
   }
   in.click_down[0] = click[0];
   in.click_down[1] = click[1];
@@ -1222,13 +1182,10 @@ bool vrgl_Present(unsigned int screen_fbo, int w, int h) {
       if (vr.overlay_transparent) {
         // Over the world: the HUD (and any dialog on it) floats nearer,
         // covering the same view angle.
-        vr.screen_distance = vr.hud_distance;
-        vr.screen_width = kScreenWidth * vr.hud_distance / kScreenDistance;
+        quad = FlatLayer(vr.screen, w, h, vr.hud_distance, kScreenWidth * vr.hud_distance / kScreenDistance, true);
       } else {
-        vr.screen_distance = kScreenDistance;
-        vr.screen_width = kScreenWidth;
+        quad = FlatLayer(vr.screen, w, h, kScreenDistance, kScreenWidth, false);
       }
-      quad = FlatLayer(vr.screen, w, h, vr.screen_distance, vr.screen_width, vr.overlay_transparent);
       layers.push_back(reinterpret_cast<XrCompositionLayerBaseHeader *>(&quad));
     }
   }

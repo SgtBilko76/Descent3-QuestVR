@@ -167,6 +167,7 @@
  */
 
 #include "UIlib.h"
+#include "d3vr.h"
 #include "application.h"
 #include "bitmap.h"
 #include "log.h"
@@ -469,7 +470,8 @@ void ui_DoCursor() {
 
   // This function needs to get called do if there are no windows, stuff gets drawn using
   // the ui_StartDraw and ui_EndDraw
-  if (UI_cursor_show && UI_cursor_bm > -1) {
+  // In VR the menus are driven with the controllers, without a mouse cursor.
+  if (UI_cursor_show && UI_cursor_bm > -1 && !vr_IsActive()) {
     ui_MousePoll(false); // DAJ
 
     float u0 = 0.0f, v0 = 0.0f, u1 = 1.0f, v1 = 1.0f;
