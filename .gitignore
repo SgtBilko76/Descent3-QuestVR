@@ -407,3 +407,7 @@ git-hash.txt
 
 # Quest port: locally generated debug signing key and APK staging output
 quest/debug.keystore
+# Game disc images: retail assets must never be committed
+*.iso
+*.bin
+*.cue
