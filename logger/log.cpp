@@ -28,6 +28,12 @@
 #include "debug.h"
 #endif
 
+#ifdef D3_ANDROID
+// stdout goes nowhere on Android, so route the log to logcat instead
+// ("adb logcat -s Descent3").
+#include <plog/Appenders/AndroidAppender.h>
+#endif
+
 #include "log.h"
 
 void InitLog(plog::Severity log_level, bool enable_filelog, bool enable_win_console) {
@@ -47,7 +53,12 @@ void InitLog(plog::Severity log_level, bool enable_filelog, bool enable_win_cons
   }
 #endif
 
+#ifdef D3_ANDROID
+  static plog::AndroidAppender<plog::TxtFormatter> androidAppender("Descent3");
+  plog::init(log_level, &androidAppender);
+#else
   plog::init(log_level, &consoleAppender);
+#endif
   if (enable_filelog) {
     if (std::filesystem::is_regular_file(log_file)) {
       // Delete old log

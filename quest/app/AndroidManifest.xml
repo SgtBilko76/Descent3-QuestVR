@@ -1,0 +1,48 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Descent 3 - Meta Quest port.
+
+  Stage 1 manifest: the app launches as a flat 2D panel on Horizon OS so the
+  engine, SDL lifecycle and data loading can be brought up and diagnosed
+  before OpenXR exists. Turning this into an immersive app is a later,
+  deliberate step (add the com.oculus.intent.category.VR category and the
+  VR meta-data), not something to enable by accident.
+-->
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    package="com.descentdevelopers.descent3"
+    android:versionCode="1"
+    android:versionName="1.6.0-quest">
+
+    <uses-sdk android:minSdkVersion="29" android:targetSdkVersion="32" />
+
+    <!-- Quest 3 -->
+    <uses-feature android:name="android.hardware.vr.headtracking" android:required="false" />
+    <uses-feature android:glEsVersion="0x00030002" android:required="true" />
+    <uses-feature android:name="android.hardware.touchscreen" android:required="false" />
+    <uses-feature android:name="android.hardware.gamepad" android:required="false" />
+
+    <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.VIBRATE" />
+
+    <application
+        android:label="Descent 3"
+        android:allowBackup="false"
+        android:hasCode="true">
+
+        <!-- Keep the engine's stdout/stderr going to logcat. -->
+        <meta-data android:name="SDL_ENV.SDL_ANDROID_TRAP_BACK_BUTTON" android:value="0" />
+
+        <activity
+            android:name="org.libsdl.app.SDLActivity"
+            android:label="Descent 3"
+            android:exported="true"
+            android:launchMode="singleTask"
+            android:screenOrientation="landscape"
+            android:configChanges="orientation|keyboardHidden|screenSize|screenLayout|uiMode|navigation">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity>
+    </application>
+</manifest>

@@ -34,6 +34,11 @@
 #endif
 
 #include <SDL3/SDL.h>
+#if defined(D3_ANDROID)
+// On Android there is no process entry point of our own: SDLActivity loads
+// libmain.so and calls SDL_main(). SDL_main.h remaps main() onto it.
+#include <SDL3/SDL_main.h>
+#endif
 
 #include "appdatabase.h"
 #include "application.h"
@@ -221,6 +226,21 @@ int PASCAL WinMain(HINSTANCE hInst, HINSTANCE hPrevInst, LPSTR szCmdLine, int nC
 int main(int argc, char *argv[]) {
   GatherArgs(argv);
   bool enable_winconsole = true;
+#endif
+
+#if defined(D3_ANDROID)
+  // The CWD of an Android process is "/", which is neither readable nor
+  // writable. Move to the app's external files directory
+  // (/sdcard/Android/data/<pkg>/files) before anything touches the filesystem.
+  // That path needs no runtime permission and is reachable over adb, which is
+  // where side-loaded game data goes.
+  if (const char *android_files_dir = SDL_GetAndroidExternalStoragePath()) {
+    std::error_code cwd_ec;
+    std::filesystem::current_path(android_files_dir, cwd_ec);
+    if (cwd_ec) {
+      SDL_Log("Descent3: could not chdir to %s: %s", android_files_dir, cwd_ec.message().c_str());
+    }
+  }
 #endif
 
   orig_pwd = std::filesystem::current_path();

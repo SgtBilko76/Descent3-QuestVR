@@ -316,7 +316,14 @@ endif()
 
 file(GLOB_RECURSE INCS "../lib/*.h")
 
-add_executable(Descent3 WIN32 MACOSX_BUNDLE ${D3Icon} ${HEADERS} ${CPPS} ${INCS} ${MANIFEST} ${RC_FILE})
+if(CMAKE_SYSTEM_NAME STREQUAL "Android")
+  # The APK has no executable of its own; SDLActivity dlopen()s libmain.so
+  # and calls SDL_main() out of it.
+  add_library(Descent3 SHARED ${HEADERS} ${CPPS} ${INCS})
+  set_target_properties(Descent3 PROPERTIES OUTPUT_NAME "main" PREFIX "lib")
+else()
+  add_executable(Descent3 WIN32 MACOSX_BUNDLE ${D3Icon} ${HEADERS} ${CPPS} ${INCS} ${MANIFEST} ${RC_FILE})
+endif()
 target_link_libraries(Descent3 PRIVATE
   SDL3::SDL3
   2dlib
@@ -351,7 +358,9 @@ target_link_libraries(Descent3 PRIVATE
   ${PLATFORM_LIBS})
 target_include_directories(Descent3 PRIVATE ${PROJECT_BINARY_DIR}/lib ${SDL3_INCLUDE_DIRS})
 target_link_options(Descent3 PRIVATE $<$<PLATFORM_ID:Windows>:/DEBUG:FULL>)
-set_target_properties(Descent3 PROPERTIES RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/build")
+set_target_properties(Descent3 PROPERTIES
+  RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/build"
+  LIBRARY_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/build")
 add_dependencies(Descent3
   get_git_hash
   Direct_TCP_IP_Hog
@@ -369,7 +378,7 @@ add_dependencies(Descent3
   tanarchy
 )
 
-install(TARGETS Descent3 RUNTIME BUNDLE DESTINATION .)
+install(TARGETS Descent3 RUNTIME LIBRARY BUNDLE DESTINATION .)
 if(MSVC)
   install(FILES $<TARGET_PDB_FILE:Descent3> DESTINATION ${CMAKE_INSTALL_BINDIR})
 endif()
