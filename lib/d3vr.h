@@ -72,6 +72,11 @@ void vr_BeginOverlay();
 void vr_BeginReticleLayer();
 void vr_EndReticleLayer();
 
+// Tells the VR input whether a game menu/dialog is open over the world (e.g.
+// the pause or exit dialog). The controllers then act as pointer and menu
+// keys even though the world is still being rendered. Call once per frame.
+void vr_SetMenuActive(bool active);
+
 // Touch controller state for flight input (Controls.cpp maps it to ship
 // controls). Returns false when there is no VR input. Menu navigation (pointer,
 // clicks, Escape/Enter) and discrete flight actions (flare, weapon cycling,
@@ -85,6 +90,7 @@ inline bool vr_IsActive() { return false; }
 inline bool vr_BeginEyePass(int, vr_eye_view *) { return false; }
 inline void vr_EndEyePass() {}
 inline void vr_BeginOverlay() {}
+inline void vr_SetMenuActive(bool) {}
 inline void vr_BeginReticleLayer() {}
 inline void vr_EndReticleLayer() {}
 inline bool vr_GetControllerState(vr_controller_state *) { return false; }

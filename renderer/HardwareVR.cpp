@@ -107,8 +107,9 @@ struct Input {
   bool mouse_down = false;
   std::vector<SDL_Keycode> held_keys;           // keys currently pressed on the engine's behalf
   std::vector<SDL_Keycode> release_next_frame;  // taps: released one frame after the press
-  float click_start[2] = {-1, -1};              // stick click press time, for short/long press
-  bool click_long_fired[2] = {false, false};
+  // Tap/hold buttons (see TapHold): press time and whether the hold fired.
+  float press_start[4] = {-1, -1, -1, -1};
+  bool hold_fired[4] = {false, false, false, false};
   int stick_dir[2] = {0, 0};                    // menu-mode arrow key currently held per stick
 };
 
@@ -137,6 +138,9 @@ struct VRState {
   bool eye_rendered[2] = {false, false};
   bool world_this_frame = false;
   bool world_last_frame = false;
+  bool menu_active = false;         // a game dialog is open over the world
+  float screen_distance = 1.5f;     // where the screen layer was last shown
+  float screen_width = 1.8f;
   bool overlay_transparent = false;
 
   // Rendering.
@@ -646,6 +650,8 @@ void ReleaseAll() {
 
 // Points the engine's mouse at where the controller ray hits the flat screen.
 void UpdatePointer(int hand, int screen_w, int screen_h) {
+  const float distance = vr.screen_distance;
+  const float width = vr.screen_width;
   XrSpaceLocation loc{XR_TYPE_SPACE_LOCATION};
   if (XR_FAILED(xrLocateSpace(vr.input.aim_space[hand], vr.local_space, vr.frame_state.predictedDisplayTime, &loc)) ||
       !(loc.locationFlags & XR_SPACE_LOCATION_POSITION_VALID_BIT) ||
@@ -656,11 +662,11 @@ void UpdatePointer(int hand, int screen_w, int screen_h) {
   if (dir.z >= -1e-4f) {
     return; // pointing away from the screen
   }
-  const float t = (-kScreenDistance - loc.pose.position.z) / dir.z;
+  const float t = (-distance - loc.pose.position.z) / dir.z;
   const float hx = loc.pose.position.x + dir.x * t;
   const float hy = loc.pose.position.y + dir.y * t;
-  const float screen_h_m = kScreenWidth * static_cast<float>(screen_h) / static_cast<float>(screen_w);
-  const float u = hx / kScreenWidth + 0.5f;
+  const float screen_h_m = width * static_cast<float>(screen_h) / static_cast<float>(screen_w);
+  const float u = hx / width + 0.5f;
   const float v = 0.5f - hy / screen_h_m;
   if (u < 0 || u > 1 || v < 0 || v > 1) {
     return;
@@ -691,22 +697,27 @@ void StickToArrows(int hand, const float stick[2]) {
   cur = want;
 }
 
-// Short press -> short_key, press held past kLongPressSeconds -> long_key.
-void ClickShortLong(int hand, bool pressed, SDL_Keycode short_key, SDL_Keycode long_key) {
+enum TapHoldButton { kRightStickClick, kLeftStickClick, kButtonB, kMenuButton };
+
+// A tap sends tap_key when the button is released; holding it past
+// kLongPressSeconds sends hold_key instead.
+void TapHold(TapHoldButton button, bool pressed, SDL_Keycode tap_key, SDL_Keycode hold_key) {
   Input &in = vr.input;
+  float &start = in.press_start[button];
+  bool &fired = in.hold_fired[button];
   if (pressed) {
-    if (in.click_start[hand] < 0) {
-      in.click_start[hand] = vr.time;
-      in.click_long_fired[hand] = false;
-    } else if (!in.click_long_fired[hand] && vr.time - in.click_start[hand] >= kLongPressSeconds) {
-      in.click_long_fired[hand] = true;
-      TapKey(long_key);
+    if (start < 0) {
+      start = vr.time;
+      fired = false;
+    } else if (!fired && vr.time - start >= kLongPressSeconds) {
+      fired = true;
+      TapKey(hold_key);
     }
-  } else if (in.click_start[hand] >= 0) {
-    if (!in.click_long_fired[hand]) {
-      TapKey(short_key);
+  } else if (start >= 0) {
+    if (!fired) {
+      TapKey(tap_key);
     }
-    in.click_start[hand] = -1;
+    start = -1;
   }
 }
 
@@ -746,22 +757,25 @@ void PollInput() {
   const bool click[2] = {GetBool(in.stick_click, kLeft), GetBool(in.stick_click, kRight)};
   const bool menu = GetBool(in.menu, -1);
 
-  // The mode follows what is on screen: flying if the world was rendered.
+  // Flying if the world was rendered and no game dialog is open over it.
   static bool flying = false;
-  if (flying != vr.world_last_frame) {
+  const bool now_flying = vr.world_last_frame && !vr.menu_active;
+  if (flying != now_flying) {
     ReleaseAll();
-    in.click_start[0] = in.click_start[1] = -1;
-    flying = vr.world_last_frame;
+    for (float &start : in.press_start) {
+      start = -1;
+    }
+    flying = now_flying;
   }
 
   if (flying) {
     // Analog flight, fire, afterburner and vertical thrust are read by
     // Controls.cpp through vr_GetControllerState(). Discrete actions use the
     // engine's default key bindings.
-    HoldKey(SDLK_ESCAPE, menu);  // pause menu
-    HoldKey(SDLK_F, s.b);        // flare
-    ClickShortLong(kRight, click[kRight], SDLK_COMMA, SDLK_H);   // cycle primary / headlight
-    ClickShortLong(kLeft, click[kLeft], SDLK_PERIOD, SDLK_TAB);  // cycle secondary / automap
+    TapHold(kMenuButton, menu, SDLK_ESCAPE, SDLK_TAB);                  // pause menu / automap
+    TapHold(kButtonB, s.b, SDLK_F, SDLK_COMMA);                         // flare / next primary
+    TapHold(kRightStickClick, click[kRight], SDLK_RETURN, SDLK_APOSTROPHE); // countermeasure: drop / next
+    TapHold(kLeftStickClick, click[kLeft], SDLK_PERIOD, SDLK_H);        // next secondary / headlight
   } else {
     // Menus: laser pointer on the flat screen, trigger or A clicks,
     // B backs out, X confirms, sticks send arrow keys.
@@ -770,6 +784,7 @@ void PollInput() {
     } else if (s.right_trigger > 0.5f && s.left_trigger < 0.5f) {
       in.pointer_hand = kRight;
     }
+    UpdatePointer(in.pointer_hand, gpu_state.screen_width, gpu_state.screen_height);
     const bool press = (in.pointer_hand == kLeft ? s.left_trigger : s.right_trigger) > 0.5f || s.a;
     SendMouseButton(press);
     HoldKey(SDLK_ESCAPE, menu || s.b);
@@ -1205,11 +1220,15 @@ bool vrgl_Present(unsigned int screen_fbo, int w, int h) {
       Release(vr.screen);
 
       if (vr.overlay_transparent) {
-        // Flying: the HUD floats nearer, covering the same view angle.
-        quad = FlatLayer(vr.screen, w, h, vr.hud_distance, kScreenWidth * vr.hud_distance / kScreenDistance, true);
+        // Over the world: the HUD (and any dialog on it) floats nearer,
+        // covering the same view angle.
+        vr.screen_distance = vr.hud_distance;
+        vr.screen_width = kScreenWidth * vr.hud_distance / kScreenDistance;
       } else {
-        quad = FlatLayer(vr.screen, w, h, kScreenDistance, kScreenWidth, false);
+        vr.screen_distance = kScreenDistance;
+        vr.screen_width = kScreenWidth;
       }
+      quad = FlatLayer(vr.screen, w, h, vr.screen_distance, vr.screen_width, vr.overlay_transparent);
       layers.push_back(reinterpret_cast<XrCompositionLayerBaseHeader *>(&quad));
     }
   }
@@ -1319,6 +1338,8 @@ void vr_BeginOverlay() {
   opengl_InvalidateBlendState();
   g3_ForceTransformRefresh();
 }
+
+void vr_SetMenuActive(bool active) { vr.menu_active = active; }
 
 void vr_BeginReticleLayer() {
   if (!vr.initialized || !vr.overlay_transparent || !vr.frame_begun || !vr.frame_state.shouldRender ||

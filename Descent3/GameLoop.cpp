@@ -2634,6 +2634,10 @@ void GameDrawHud() {
 // Draw a frame of the game
 void GameRenderFrame(void) {
   bool no_render = false;
+
+  // VR: dialogs (pause, exit confirmation, ...) can be open while the world
+  // keeps rendering; the controllers must then drive the menu.
+  vr_SetMenuActive(Game_interface_mode != GAME_INTERFACE || Menu_interface_mode);
   AI_NumRendered = 0;
   AI_NumHostileAlert = 0;
 

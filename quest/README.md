@@ -72,13 +72,15 @@ adb shell "cd $DATA && find . -mindepth 1 -type d -exec chmod 2777 {} +"
 | Left trigger | fire secondary | click (laser pointer) |
 | Grips | bank left / right | — |
 | A | afterburner | click |
-| B | flare | back |
+| B | flare (hold: next primary) | back |
 | X / Y | slide down / up | X = Enter |
-| Right stick click | next primary (hold: headlight) | — |
-| Left stick click | next secondary (hold: automap) | — |
-| Menu button | pause menu | back |
+| Right stick click | drop countermeasure (hold: next countermeasure) | — |
+| Left stick click | next secondary (hold: headlight) | — |
+| Menu button | pause menu (hold: automap) | back |
 
-Text fields, such as the pilot name, open the Quest's system keyboard.
+In menus and dialogs, point at an item with either controller and pull the
+trigger (or press A). Text fields, such as the pilot name, open the Quest's
+system keyboard.
 Recenter the view with the Meta button (hold).
 
 ## Known issues

@@ -481,8 +481,11 @@ static void ToggleHeadlightControlState();
 //	  X / Y         slide down / up
 //	  A             afterburner
 //	  triggers      fire secondary (left) / primary (right)
-//	Discrete actions (flare, weapon cycling, headlight, automap, pause) arrive as
-//	key presses from the VR module.
+//	Discrete actions arrive as key presses from the VR module (tap / hold):
+//	  B                 flare / next primary
+//	  right stick click drop countermeasure / next countermeasure
+//	  left stick click  next secondary / headlight
+//	  menu button       pause menu / automap
 static float VRDeadzone(float v) {
   constexpr float deadzone = 0.15f;
   if (std::fabs(v) < deadzone)
