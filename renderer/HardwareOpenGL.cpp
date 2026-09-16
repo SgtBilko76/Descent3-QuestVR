@@ -44,6 +44,7 @@
 #include "lightmap.h"
 #include "log.h"
 #include "rend_opengl.h"
+#include "HardwareVR.h"
 #include "grdefs.h"
 #include "mem.h"
 #include "config.h"
@@ -723,12 +724,23 @@ int opengl_Init(oeApplication *app, renderer_preferred_state *pref_state) {
 
   LOG_INFO.printf("OpenGL initialization at %d x %d was successful.", width, height);
 
+#if defined(D3_OPENXR)
+  vrgl_Init();
+#endif
+
   return retval;
 }
 
 // Releases the rendering context
 void opengl_Close(const bool just_resizing) {
   CHECK_ERROR(5)
+
+#if defined(D3_OPENXR)
+  // The VR session is bound to this GL context.
+  if (!just_resizing) {
+    vrgl_Shutdown();
+  }
+#endif
 
   // Only touch GL if a context exists: when setup fails before the GL entry
   // points are resolved, the dgl* function pointers are still null.
@@ -739,7 +751,14 @@ void opengl_Close(const bool just_resizing) {
 
   gRenderer.reset();
 
-  if (GSDLGLContext) {
+  // In VR the OpenXR session and its swapchains are bound to this GL context,
+  // so a resolution change must keep it. opengl_Setup reuses an existing
+  // context and rebuilds the screen framebuffer at the new size.
+  bool keep_context = false;
+#if defined(D3_OPENXR)
+  keep_context = just_resizing;
+#endif
+  if (GSDLGLContext && !keep_context) {
     SDL_GL_MakeCurrent(nullptr, nullptr);
     SDL_GL_DestroyContext(GSDLGLContext);
     GSDLGLContext = nullptr;
@@ -1492,6 +1511,13 @@ void rend_Flip() {
   OpenGL_polys_drawn = 0;
   OpenGL_verts_processed = 0;
 
+#if defined(D3_OPENXR)
+  // In VR the frame goes to the headset instead of the window.
+  if (GOpenGLFBO != 0 && vrgl_Present(GOpenGLFBO, GOpenGLFBOWidth, GOpenGLFBOHeight)) {
+    return;
+  }
+#endif
+
   // if we're rendering to an FBO, scale to the window framebuffer!
   if (GOpenGLFBO != 0) {
     int w, h;
@@ -1649,6 +1675,31 @@ void rend_DrawLine(int x1, int y1, int x2, int y2) {
 // Sets the color of fog
 void rend_SetFogColor(ddgr_color color) { gRenderer->setFogColor(color); }
 
+#if defined(D3_OPENXR)
+void opengl_BindScreenFramebuffer() {
+  if (GOpenGLFBO != 0) {
+    dglBindFramebuffer(GL_FRAMEBUFFER, GOpenGLFBO);
+    dglViewport(0, 0, GOpenGLFBOWidth, GOpenGLFBOHeight);
+    dglScissor(0, 0, GOpenGLFBOWidth, GOpenGLFBOHeight);
+  }
+}
+
+void opengl_InvalidateBlendState() { gpu_state.cur_alpha_type = -1; }
+#endif
+
+// Sets the blend function. When the VR screen layer is composited over the
+// world, its alpha channel must come out as premultiplied coverage, so alpha
+// gets its own factors there; otherwise alpha is never looked at.
+static void opengl_BlendFunc(GLenum src, GLenum dst, GLenum src_alpha, GLenum dst_alpha) {
+#if defined(D3_OPENXR)
+  if (vrgl_OverlayIsTransparent()) {
+    dglBlendFuncSeparate(src, dst, src_alpha, dst_alpha);
+    return;
+  }
+#endif
+  dglBlendFunc(src, dst);
+}
+
 void rend_SetAlphaType(int8_t atype) {
   if (atype == gpu_state.cur_alpha_type)
     return; // don't set it redundantly
@@ -1672,7 +1723,7 @@ void rend_SetAlphaType(int8_t atype) {
   case AT_ALWAYS:
   case AT_TEXTURE:
     rend_SetAlphaValue(255);
-    dglBlendFunc(GL_ONE, GL_ZERO);
+    opengl_BlendFunc(GL_ONE, GL_ZERO, GL_ONE, GL_ZERO);
     break;
   case AT_CONSTANT:
   case AT_CONSTANT_TEXTURE:
@@ -1680,17 +1731,17 @@ void rend_SetAlphaType(int8_t atype) {
   case AT_CONSTANT_TEXTURE_VERTEX:
   case AT_CONSTANT_VERTEX:
   case AT_TEXTURE_VERTEX:
-    dglBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+    opengl_BlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA, GL_ONE, GL_ONE_MINUS_SRC_ALPHA);
     break;
   case AT_LIGHTMAP_BLEND:
-    dglBlendFunc(GL_DST_COLOR, GL_ZERO);
+    opengl_BlendFunc(GL_DST_COLOR, GL_ZERO, GL_ZERO, GL_ONE);
     break;
   case AT_SATURATE_TEXTURE:
   case AT_LIGHTMAP_BLEND_SATURATE:
   case AT_SATURATE_VERTEX:
   case AT_SATURATE_CONSTANT_VERTEX:
   case AT_SATURATE_TEXTURE_VERTEX:
-    dglBlendFunc(GL_SRC_ALPHA, GL_ONE);
+    opengl_BlendFunc(GL_SRC_ALPHA, GL_ONE, GL_ZERO, GL_ONE);
     break;
   case AT_SPECULAR:
     break;

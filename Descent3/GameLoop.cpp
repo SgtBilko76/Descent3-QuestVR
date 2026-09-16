@@ -806,6 +806,7 @@
 #include "game.h"
 #include "render.h"
 #include "descent.h"
+#include "d3vr.h"
 #include "slew.h"
 #include "log.h"
 #include "doorway.h"
@@ -2482,6 +2483,37 @@ void GameRenderWorld(object *viewer, vector *viewer_eye, int viewer_roomnum, mat
     viewer->orient = save_orient;
 }
 
+// VR: renders the world once per eye into the headset's eye buffers. The eye
+// is placed inside the viewer (the cockpit) by the head pose, so the ship still
+// flies on the controls while the player looks around. Returns false if stereo
+// isn't available this frame, in which case the caller renders the usual view.
+static bool GameRenderWorldVR(object *viewer, bool rear_view) {
+  if (!vr_IsActive()) {
+    return false;
+  }
+  const matrix &o = viewer->orient;
+  for (int eye = 0; eye < 2; eye++) {
+    vr_eye_view view;
+    if (!vr_BeginEyePass(eye, &view)) {
+      return false;
+    }
+    auto to_world = [&o](const float v[3]) { return o.rvec * v[0] + o.uvec * v[1] + o.fvec * v[2]; };
+    vector eye_pos = viewer->pos + to_world(view.offset);
+    matrix eye_orient;
+    eye_orient.rvec = to_world(view.right);
+    eye_orient.uvec = to_world(view.up);
+    eye_orient.fvec = to_world(view.forward);
+
+    StartFrame(0, 0, view.size, view.size, false);
+    GameRenderWorld(viewer, &eye_pos, viewer->roomnum, &eye_orient, view.zoom, rear_view);
+    EndFrame();
+    vr_EndEyePass();
+  }
+  // What follows (HUD, small views) is drawn over the world on the screen layer.
+  vr_BeginOverlay();
+  return true;
+}
+
 // Render into the big window
 void GameDrawMainView() {
   extern bool Guided_missile_smallview; // smallviews.cpp
@@ -2502,8 +2534,10 @@ void GameDrawMainView() {
 
   // Draw the world
   Rendering_main_view = true;
-  GameRenderWorld(Viewer_object, &Viewer_object->pos, Viewer_object->roomnum, &Viewer_object->orient, Render_zoom,
-                  rear_view);
+  if (!GameRenderWorldVR(Viewer_object, rear_view)) {
+    GameRenderWorld(Viewer_object, &Viewer_object->pos, Viewer_object->roomnum, &Viewer_object->orient, Render_zoom,
+                    rear_view);
+  }
   Rendering_main_view = false;
 
   // Restore viewer object if guided

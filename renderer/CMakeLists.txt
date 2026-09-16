@@ -30,7 +30,15 @@ set(CPPS
   HardwareTransforms.cpp
 )
 
+if(D3_OPENXR)
+  list(APPEND HEADERS HardwareVR.h)
+  list(APPEND CPPS HardwareVR.cpp)
+endif()
+
 add_library(renderer STATIC ${HEADERS} ${CPPS})
+if(D3_OPENXR)
+  target_link_libraries(renderer PRIVATE OpenXR::openxr_loader EGL GLESv3)
+endif()
 target_include_directories(renderer PRIVATE ${GENERATED_HEADERS} ${SDL3_INCLUDE_DIRS})
 target_link_libraries(renderer PRIVATE
   glm::glm

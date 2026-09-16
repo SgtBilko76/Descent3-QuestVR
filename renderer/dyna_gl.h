@@ -138,6 +138,7 @@ DYNAEXTERN(glBindBuffer);
 DYNAEXTERN(glBindTexture);
 DYNAEXTERN(glBindVertexArray);
 DYNAEXTERN(glBlendFunc);
+DYNAEXTERN(glBlendFuncSeparate);
 DYNAEXTERN(glBufferData);
 DYNAEXTERN(glBufferSubData);
 DYNAEXTERN(glClear);

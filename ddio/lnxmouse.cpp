@@ -81,6 +81,7 @@
 //	Mouse Interface
 // ----------------------------------------------------------------------------
 
+#include <algorithm>
 #include <cstring>
 #include <SDL3/SDL.h>
 
@@ -147,6 +148,15 @@ void ddio_MouseSetLimits(int left, int top, int right, int bottom, int zmin, int
   DDIO_mouse_state.t = top;
   DDIO_mouse_state.r = right;
   DDIO_mouse_state.b = bottom;
+}
+
+void ddio_MouseSetPosition(int x, int y) {
+  x = std::clamp(x, DDIO_mouse_state.l, std::max(DDIO_mouse_state.l, DDIO_mouse_state.r - 1));
+  y = std::clamp(y, DDIO_mouse_state.t, std::max(DDIO_mouse_state.t, DDIO_mouse_state.b - 1));
+  DDIO_mouse_state.dx += static_cast<float>(x - DDIO_mouse_state.x);
+  DDIO_mouse_state.dy += static_cast<float>(y - DDIO_mouse_state.y);
+  DDIO_mouse_state.x = x;
+  DDIO_mouse_state.y = y;
 }
 
 void ddio_MouseGetLimits(int *left, int *top, int *right, int *bottom, int *zmin, int *zmax) {

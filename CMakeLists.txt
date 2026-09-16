@@ -211,6 +211,12 @@ if(CMAKE_SYSTEM_NAME STREQUAL "Android")
   # Android is close enough to Linux for the engine's POSIX paths. The renderer
   # diverges though: GLES 3.2 via EGL rather than desktop GL via libGL.so.
   add_compile_definitions(POSIX __LINUX__ D3_ANDROID D3_GLES PRIMARY_HOG=\"d3-linux.hog\")
+  # VR: OpenXR (stereo rendering, head tracking, Touch controllers).
+  option(D3_OPENXR "Build the OpenXR VR mode" ON)
+  if(D3_OPENXR)
+    include(${CMAKE_SOURCE_DIR}/quest/cmake/OpenXR.cmake)
+    add_compile_definitions(D3_OPENXR)
+  endif()
 elseif(CMAKE_SYSTEM_NAME STREQUAL "Linux" OR CMAKE_SYSTEM_NAME STREQUAL "OpenBSD")
   message("Building for Linux")
   add_compile_definitions(POSIX __LINUX__ _USE_OGL_ACTIVE_TEXTURES PRIMARY_HOG=\"d3-linux.hog\")

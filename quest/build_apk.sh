@@ -34,6 +34,20 @@ done
 
 rm -rf "$OUT_DIR"
 mkdir -p "$OUT_DIR"/{flat,gen,classes,dex,lib/arm64-v8a,assets}
+OUT_DIR="$(cd "$OUT_DIR" && pwd)"  # later steps cd around
+
+# vr (default): immersive OpenXR app. flat: 2D panel app without VR.
+APK_MODE="${APK_MODE:-vr}"
+MANIFEST="$OUT_DIR/AndroidManifest.xml"
+case "$APK_MODE" in
+  vr)   sed 's/D3VR_ENABLED_VALUE/true/' "$D3_ROOT/quest/app/AndroidManifest.xml" > "$MANIFEST" ;;
+  flat) sed -e '/<!-- VR-BEGIN -->/,/<!-- VR-END -->/d' -e 's/D3VR_ENABLED_VALUE/false/' \
+            "$D3_ROOT/quest/app/AndroidManifest.xml" > "$MANIFEST" ;;
+  *)    echo "APK_MODE must be vr or flat" >&2; exit 1 ;;
+esac
+
+# The OpenXR loader libmain.so links against (fetched by quest/cmake/OpenXR.cmake).
+OPENXR_LOADER="$(sed -n 's/^D3_OPENXR_LOADER:INTERNAL=//p' "$BUILD_DIR/CMakeCache.txt")"
 
 echo "==> aapt2 compile"
 "$AAPT2" compile --dir "$D3_ROOT/quest/app/res" -o "$OUT_DIR/flat/res.zip"
@@ -47,7 +61,7 @@ debug_flag=()
 echo "==> aapt2 link"
 "$AAPT2" link ${debug_flag[@]+"${debug_flag[@]}"} \
   -I "$PLATFORM_JAR" \
-  --manifest "$D3_ROOT/quest/app/AndroidManifest.xml" \
+  --manifest "$MANIFEST" \
   --java "$OUT_DIR/gen" \
   --min-sdk-version 29 --target-sdk-version 32 \
   -o "$OUT_DIR/base.apk" \
@@ -68,6 +82,9 @@ find "$OUT_DIR/classes" -name '*.class' > "$OUT_DIR/classes.txt"
 echo "==> stage native libs"
 cp "$LIBSDL"  "$OUT_DIR/lib/arm64-v8a/libSDL3.so"
 cp "$LIBMAIN" "$OUT_DIR/lib/arm64-v8a/libmain.so"
+if [[ -n "$OPENXR_LOADER" ]]; then
+  cp "$OPENXR_LOADER" "$OUT_DIR/lib/arm64-v8a/libopenxr_loader.so"
+fi
 # Strip: the unstripped engine .so is ~47MB, almost all debug_info.
 "$ANDROID_NDK_HOME/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-strip" \
   "$OUT_DIR/lib/arm64-v8a/libmain.so" "$OUT_DIR/lib/arm64-v8a/libSDL3.so"
@@ -93,4 +110,4 @@ echo "==> zipalign + sign"
   --min-sdk-version 29 "$OUT_DIR/descent3-quest.apk"
 
 echo
-echo "APK: $OUT_DIR/descent3-quest.apk  ($(du -h "$OUT_DIR/descent3-quest.apk" | cut -f1))"
+echo "APK ($APK_MODE): $OUT_DIR/descent3-quest.apk  ($(du -h "$OUT_DIR/descent3-quest.apk" | cut -f1))"

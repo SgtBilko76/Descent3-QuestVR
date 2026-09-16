@@ -404,9 +404,12 @@
  * $NoKeywords: $
  */
 
+#include <algorithm>
+#include <cmath>
 #include <cstdlib>
 
 #include "controls.h"
+#include "d3vr.h"
 
 #include "object.h"
 #include "pserror.h"
@@ -470,6 +473,54 @@ static void DoControllerMisc(game_controls *controls);
 void DoCommands();
 
 static void ToggleHeadlightControlState();
+
+//	VR: flight input from the Touch controllers (see lib/d3vr.h).
+//	  left stick    forward/back thrust, slide left/right
+//	  right stick   turn and pitch (stick up = nose up; -vrinvertpitch flips it)
+//	  grips         bank left / right
+//	  X / Y         slide down / up
+//	  A             afterburner
+//	  triggers      fire secondary (left) / primary (right)
+//	Discrete actions (flare, weapon cycling, headlight, automap, pause) arrive as
+//	key presses from the VR module.
+static float VRDeadzone(float v) {
+  constexpr float deadzone = 0.15f;
+  if (std::fabs(v) < deadzone)
+    return 0.0f;
+  return (v - std::copysign(deadzone, v)) / (1.0f - deadzone);
+}
+
+static void DoVRMovement(game_controls *controls) {
+  vr_controller_state vr;
+  if (!vr_GetControllerState(&vr))
+    return;
+  static const float pitch_sign = FindArg("-vrinvertpitch") ? 1.0f : -1.0f; // +pitch_thrust is nose down
+
+  controls->forward_thrust += VRDeadzone(vr.left_stick[1]);
+  controls->sideways_thrust += VRDeadzone(vr.left_stick[0]);
+  controls->heading_thrust += VRDeadzone(vr.right_stick[0]);
+  controls->pitch_thrust += pitch_sign * VRDeadzone(vr.right_stick[1]);
+  controls->bank_thrust += VRDeadzone(vr.left_grip) - VRDeadzone(vr.right_grip); // +bank_thrust banks left
+  controls->vertical_thrust += (vr.y ? 1.0f : 0.0f) - (vr.x ? 1.0f : 0.0f);
+  if (vr.a)
+    controls->afterburn_thrust += 1.0f;
+}
+
+static void DoVRWeapons(game_controls *controls) {
+  vr_controller_state vr;
+  if (!vr_GetControllerState(&vr))
+    return;
+  // Same semantics as held fire keys: pressed this frame, for the whole frame.
+  if (vr.right_trigger > 0.5f) {
+    controls->fire_primary_down_state = true;
+    controls->fire_primary_down_count = std::max(controls->fire_primary_down_count, 1);
+    controls->fire_primary_down_time = std::max(controls->fire_primary_down_time, Frametime);
+  }
+  if (vr.left_trigger > 0.5f) {
+    controls->fire_secondary_down_count = std::max(controls->fire_secondary_down_count, 1);
+    controls->fire_secondary_down_time = std::max(controls->fire_secondary_down_time, Frametime);
+  }
+}
 
 //	LIST OF NEEDS
 ct_function Controller_needs[NUM_CONTROLLER_FUNCTIONS] = {
@@ -764,6 +815,7 @@ void DoMovement(game_controls *controls) {
 
   // controller
   DoControllerMovement(controls);
+  DoVRMovement(controls);
 
   //	clip controller values
   if (controls->pitch_thrust > LIMIT_PITCH)
@@ -993,6 +1045,7 @@ void DoWeapons(game_controls *controls) {
     DoKeyboardWeapons(controls);
 
   DoControllerWeapons(controls);
+  DoVRWeapons(controls);
 }
 
 void DoKeyboardWeapons(game_controls *controls) {

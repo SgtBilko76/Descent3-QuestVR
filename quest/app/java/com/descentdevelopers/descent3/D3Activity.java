@@ -19,6 +19,8 @@ package com.descentdevelopers.descent3;
 
 import android.content.Intent;
 import android.content.pm.ApplicationInfo;
+import android.content.pm.PackageManager;
+import android.os.Bundle;
 import android.util.Log;
 
 import java.util.ArrayList;
@@ -27,8 +29,8 @@ import java.util.List;
 import org.libsdl.app.SDLActivity;
 
 /**
- * The app's activity. For now it only adds engine command-line arguments on
- * top of SDLActivity:
+ * The app's activity. On top of SDLActivity it passes the engine its
+ * command line: -novr for the flat build flavour, plus launch arguments:
  *
  *   adb shell am start -n com.descentdevelopers.descent3/.D3Activity \
  *       --es args "-nointro -pilot Quest -mission d3 -loadlevel 1"
@@ -41,18 +43,36 @@ public class D3Activity extends SDLActivity {
 
     @Override
     protected String[] getArguments() {
+        List<String> args = new ArrayList<>();
+        if (!vrEnabled()) {
+            args.add("-novr");
+        }
         Intent intent = getIntent();
-        String args = intent != null ? intent.getStringExtra("args") : null;
-        if (args == null || args.isEmpty()) {
-            return new String[0];
+        String extra = intent != null ? intent.getStringExtra("args") : null;
+        if (extra != null && !extra.isEmpty()) {
+            if ((getApplicationInfo().flags & ApplicationInfo.FLAG_DEBUGGABLE) != 0) {
+                for (String a : split(extra)) {
+                    args.add(a);
+                }
+            } else {
+                Log.w(TAG, "ignoring launch arguments: not a debuggable build");
+            }
         }
-        if ((getApplicationInfo().flags & ApplicationInfo.FLAG_DEBUGGABLE) == 0) {
-            Log.w(TAG, "ignoring launch arguments: not a debuggable build");
-            return new String[0];
+        if (!args.isEmpty()) {
+            Log.i(TAG, "launch arguments: " + String.join(" ", args));
         }
-        String[] parsed = split(args);
-        Log.i(TAG, "launch arguments: " + String.join(" ", parsed));
-        return parsed;
+        return args.toArray(new String[0]);
+    }
+
+    /** False for the flat (2D panel) build flavour; see quest/build_apk.sh. */
+    private boolean vrEnabled() {
+        try {
+            Bundle meta = getPackageManager()
+                    .getApplicationInfo(getPackageName(), PackageManager.GET_META_DATA).metaData;
+            return meta == null || meta.getBoolean("D3VR_ENABLED", true);
+        } catch (PackageManager.NameNotFoundException e) {
+            return true;
+        }
     }
 
     /** Splits on whitespace; double quotes group words ("my pilot"). */
