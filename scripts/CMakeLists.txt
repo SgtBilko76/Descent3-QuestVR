@@ -7,7 +7,7 @@ set(HEADERS
   osiris_import.h
   osiris_vector.h)
 set(CPPS
-  $<$<PLATFORM_ID:Darwin,Linux,OpenBSD>:
+  $<$<PLATFORM_ID:Android,Darwin,Linux,OpenBSD>:
     linux_lib.cpp
   >
 )

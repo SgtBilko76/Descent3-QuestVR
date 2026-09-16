@@ -145,7 +145,9 @@ if(BUILD_TESTING)
 endif()
 
 # Define names for HOG files
-if(CMAKE_SYSTEM_NAME STREQUAL "Linux" OR CMAKE_SYSTEM_NAME STREQUAL "OpenBSD")
+if(CMAKE_SYSTEM_NAME STREQUAL "Android")
+  set(HOG_NAME "linux")
+elseif(CMAKE_SYSTEM_NAME STREQUAL "Linux" OR CMAKE_SYSTEM_NAME STREQUAL "OpenBSD")
   set(HOG_NAME "linux")
 elseif(CMAKE_SYSTEM_NAME STREQUAL "Darwin")
   set(HOG_NAME "osx")
@@ -182,7 +184,11 @@ find_package(SDL3 3.2.6 REQUIRED CONFIG REQUIRED COMPONENTS SDL3)
 find_package(glm REQUIRED)
 find_package(httplib QUIET)
 if (TARGET httplib::httplib)
-  add_library(httplib ALIAS httplib::httplib)
+  # A source build of cpp-httplib (as used by the Android/Quest port) already
+  # defines a plain "httplib" target alongside the namespaced one.
+  if (NOT TARGET httplib)
+    add_library(httplib ALIAS httplib::httplib)
+  endif()
 else()
   # Some Linux distributions do not package httplibConfig.cmake, so find the header manually
   find_file(CPP_HTTPLIB_HEADER httplib.h REQUIRED)
@@ -200,7 +206,12 @@ endif()
 find_package(ZLIB REQUIRED)
 find_package(plog REQUIRED)
 
-if(CMAKE_SYSTEM_NAME STREQUAL "Linux" OR CMAKE_SYSTEM_NAME STREQUAL "OpenBSD")
+if(CMAKE_SYSTEM_NAME STREQUAL "Android")
+  message("Building for Android (Meta Quest)")
+  # Android is close enough to Linux for the engine's POSIX paths. The renderer
+  # diverges though: GLES 3.2 via EGL rather than desktop GL via libGL.so.
+  add_compile_definitions(POSIX __LINUX__ D3_ANDROID D3_GLES PRIMARY_HOG=\"d3-linux.hog\")
+elseif(CMAKE_SYSTEM_NAME STREQUAL "Linux" OR CMAKE_SYSTEM_NAME STREQUAL "OpenBSD")
   message("Building for Linux")
   add_compile_definitions(POSIX __LINUX__ _USE_OGL_ACTIVE_TEXTURES PRIMARY_HOG=\"d3-linux.hog\")
 elseif(CMAKE_SYSTEM_NAME STREQUAL "Darwin")
