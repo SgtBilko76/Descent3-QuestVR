@@ -1,4 +1,4 @@
-# Descent 3 for Meta Quest — version @VERSION@
+# Descent 3 for Meta Quest 
 
 A VR port of the [Descent 3 open source engine](https://github.com/DescentDevelopers/Descent3)
 for Meta Quest headsets, running standalone as a sideloaded app. You sit in a
