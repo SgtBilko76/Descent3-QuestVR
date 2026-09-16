@@ -658,6 +658,7 @@
 #include <sstream>
 #include <vector>
 
+#include "cfile.h"
 #include "log.h"
 #include "menu.h"
 #include "mmItem.h"
@@ -901,6 +902,21 @@ int MainMenu() {
 //	runs command line options.
 bool ProcessCommandLine() {
   int exit_menu = 0;
+  // Development/testing: play back a demo recording (from the demo directory)
+  // on startup, e.g. -playdemo Secret2.dem
+  static bool demo_started = false;
+  if (const int demo_arg = FindArg("-playdemo"); demo_arg && !demo_started) {
+    demo_started = true;
+    std::filesystem::path demo = cf_LocatePath(std::filesystem::path("demo") / GameArgs[demo_arg + 1]);
+    if (demo.empty()) {
+      LOG_WARNING << "Demo not found: " << GameArgs[demo_arg + 1];
+    } else {
+      Demo_fname = demo;
+      SetGameMode(GM_NORMAL);
+      SetFunctionMode(LOADDEMO_MODE);
+      return true;
+    }
+  }
   // Auto connect to a network game if the parm is there.
   if ((!Auto_connected) && (TCP_active) && (FindArg("-url"))) {
     Auto_connected = true;

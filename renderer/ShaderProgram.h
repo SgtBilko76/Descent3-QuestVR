@@ -18,11 +18,15 @@
 
 #pragma once
 
+#include <algorithm>
 #include <cstddef>
+#include <cstdint>
+#include <iterator>
 #include <functional>
 #include <stdexcept>
 #include <string>
 #include <unordered_map>
+#include <vector>
 #include <glm/mat4x4.hpp>
 #include <glm/gtc/type_ptr.hpp>
 #include "dyna_gl.h"
@@ -85,6 +89,12 @@ struct VertexBuffer {
     dglBufferSubData(GL_ARRAY_BUFFER, vtx_offset * sizeof(V), vtx_count * sizeof(V), vertices);
   }
 
+  // Makes this the vertex source for draws (its VAO and its buffer).
+  void bindForDrawing() {
+    dglBindVertexArray(vao_);
+    bind();
+  }
+
 protected:
   void bind() {
     dglBindBuffer(GL_ARRAY_BUFFER, vbo_);
@@ -137,11 +147,84 @@ struct OrphaningVertexBuffer : VertexBuffer<V> {
     return start;
   }
 
+  void NewFrame() {}
+
 private:
   static constexpr size_t kVertexCount{1 << 16};
   static constexpr GLenum kBufferType{GL_STREAM_DRAW};
   size_t nextVertex_{};
 };
+
+#if defined(D3_GLES)
+// Vertex streaming for tile-based mobile GPUs (the Quest's Adreno).
+//
+// Such GPUs execute draw calls late, and the driver does not reliably keep an
+// orphaned buffer's old storage alive for draws still queued: rewriting a
+// wrapped OrphaningVertexBuffer corrupted geometry in busy scenes. Updating it
+// with glBufferSubData instead stalls on the GPU for every polygon (about
+// 0.5 fps). So rotate through a pool of buffers and only reuse one that hasn't
+// been drawn from for a few frames. Within a buffer, writes always go to fresh
+// ranges, which keeps unsynchronized mapping safe.
+template <typename V>
+struct StreamingVertexBuffer {
+  StreamingVertexBuffer(GLuint program, std::vector<VertexAttrib<V>> attribs)
+      : program_{program}, attribs_{std::move(attribs)} {
+    buffers_.emplace_back(program_, attribs_, kVertexCount, kBufferType);
+    last_used_.push_back(frame_);
+  }
+
+  template <typename VertexIter,
+            typename = std::enable_if<std::is_convertible_v<typename std::iterator_traits<VertexIter>::value_type, V>>>
+  size_t AddVertexData(VertexIter begin, VertexIter end) {
+    const size_t dist = static_cast<size_t>(std::distance(begin, end));
+    if (next_ + dist > kVertexCount) {
+      Rotate();
+    }
+    auto &buffer = buffers_[current_];
+    buffer.bindForDrawing();
+    V *mapped = reinterpret_cast<V *>(dglMapBufferRange(GL_ARRAY_BUFFER, next_ * sizeof(V), dist * sizeof(V),
+                                                        GL_MAP_WRITE_BIT | GL_MAP_UNSYNCHRONIZED_BIT));
+    std::copy(begin, end, mapped);
+    dglUnmapBuffer(GL_ARRAY_BUFFER);
+    last_used_[current_] = frame_;
+
+    const size_t start = next_;
+    next_ += dist;
+    return start;
+  }
+
+  // Call once per presented frame.
+  void NewFrame() { frame_++; }
+
+private:
+  void Rotate() {
+    for (size_t step = 1; step < buffers_.size(); step++) {
+      const size_t i = (current_ + step) % buffers_.size();
+      if (frame_ - last_used_[i] >= kReuseAfterFrames) {
+        current_ = i;
+        next_ = 0;
+        return;
+      }
+    }
+    buffers_.emplace_back(program_, attribs_, kVertexCount, kBufferType);
+    last_used_.push_back(frame_);
+    current_ = buffers_.size() - 1;
+    next_ = 0;
+  }
+
+  static constexpr size_t kVertexCount{1 << 16};
+  static constexpr GLenum kBufferType{GL_STREAM_DRAW};
+  static constexpr uint64_t kReuseAfterFrames{4};
+
+  GLuint program_;
+  std::vector<VertexAttrib<V>> attribs_;
+  std::vector<VertexBuffer<V>> buffers_;
+  std::vector<uint64_t> last_used_;
+  size_t current_ = 0;
+  size_t next_ = 0;
+  uint64_t frame_ = kReuseAfterFrames;
+};
+#endif
 
 template <GLenum kType>
 struct Shader {
@@ -218,6 +301,9 @@ struct ShaderProgram {
     return vbo_.AddVertexData(begin, end);
   }
 
+  // Call once per presented frame.
+  void newFrame() { vbo_.NewFrame(); }
+
   void setUniformMat4f(std::string const& name, glm::mat4x4 const& matrix) {
     dglUniformMatrix4fv(getUniformId(name), 1, GL_FALSE, glm::value_ptr(matrix));
   }
@@ -256,6 +342,10 @@ private:
   MoveOnlyHolder<GLuint, DeleteProgram> id_;
   Shader<GL_VERTEX_SHADER> vertex_;
   Shader<GL_FRAGMENT_SHADER> fragment_;
+#if defined(D3_GLES)
+  StreamingVertexBuffer<V> vbo_;
+#else
   OrphaningVertexBuffer<V> vbo_;
+#endif
   std::unordered_map<std::string, GLint> uniform_cache_;
 };

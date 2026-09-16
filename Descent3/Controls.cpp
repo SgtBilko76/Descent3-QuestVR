@@ -476,7 +476,7 @@ static void ToggleHeadlightControlState();
 
 //	VR: flight input from the Touch controllers (see lib/d3vr.h).
 //	  left stick    forward/back thrust, slide left/right
-//	  right stick   turn and pitch (stick up = nose up; -vrinvertpitch flips it)
+//	  right stick   turn and pitch (flight style: stick up = nose down; -vrinvertpitch flips it)
 //	  grips         bank left / right
 //	  X / Y         slide down / up
 //	  A             afterburner
@@ -494,7 +494,7 @@ static void DoVRMovement(game_controls *controls) {
   vr_controller_state vr;
   if (!vr_GetControllerState(&vr))
     return;
-  static const float pitch_sign = FindArg("-vrinvertpitch") ? 1.0f : -1.0f; // +pitch_thrust is nose down
+  static const float pitch_sign = FindArg("-vrinvertpitch") ? -1.0f : 1.0f; // +pitch_thrust is nose down
 
   controls->forward_thrust += VRDeadzone(vr.left_stick[1]);
   controls->sideways_thrust += VRDeadzone(vr.left_stick[0]);

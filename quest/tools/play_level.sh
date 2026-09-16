@@ -27,7 +27,7 @@ fi
 
 # Wait until the level is being rendered.
 for _ in $(seq 90); do
-  grep -q "stereo)" "$LOG" 2>/dev/null && ! grep -q "(0% stereo)" <(grep "stereo)" "$LOG" | tail -1) && break
+  grep -aq "stereo)" "$LOG" 2>/dev/null && ! grep -q "(0% stereo)" <(grep -a "stereo)" "$LOG" | tail -1) && break
   timeout 1 adb logcat -T 1 >/dev/null 2>&1 || true
 done
 timeout "$SECONDS_TO_RUN" adb logcat -T 1 >/dev/null 2>&1 || true
@@ -35,7 +35,7 @@ kill "$logger_pid" 2>/dev/null || true
 wait "$logger_pid" 2>/dev/null || true
 
 echo "pid: $(adb shell pidof $PKG | tr -d '\r')"
-grep -E "Descent3.*(VR:|ERROR)|libc\+\+abi|F/DEBUG" "$LOG" | grep -vE "Osiris_Bind|ret_pr0|GetBasePath" \
+grep -aE "Descent3.*(VR:|ERROR)|libc\+\+abi|F/DEBUG" "$LOG" | grep -vE "Osiris_Bind|ret_pr0|GetBasePath" \
   | sed -E 's/Descent3\([0-9]+\): [0-9-]+ [0-9:.]+ //' | tail -8
 echo "--- runtime (VrApi) ---"
-grep -E "VrApi.*FPS=" "$LOG" | tail -4 | sed -E 's/.*(FPS=[^,]+).*(CPU4\/GPU=[^,]+).*(GPU%=[^,]+).*(CPU%=[^(,]+).*/\1 \2 \3 \4/'
+grep -aE "VrApi.*FPS=" "$LOG" | tail -4 | sed -E 's/.*(FPS=[^,]+).*(CPU4\/GPU=[^,]+).*(GPU%=[^,]+).*(CPU%=[^(,]+).*/\1 \2 \3 \4/'

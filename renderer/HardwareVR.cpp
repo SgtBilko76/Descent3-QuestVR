@@ -198,41 +198,134 @@ void CheckGL(const char *where) {
 // texture object and drew garbage. Every runtime call that may touch GL is
 // therefore wrapped to restore this state.
 struct GLStateSnapshot {
-  GLint active_texture = 0;
-  GLint texture[2] = {0, 0};
-  GLint array_buffer = 0;
-  GLint vertex_array = 0;
-  GLint program = 0;
-  GLint unpack_alignment = 0;
-  GLint framebuffer = 0;
+  // Integer state queried with glGetIntegerv and put back with its setter.
+  enum Item {
+    kActiveTexture, kTex0, kTex1, kTex2, kTex3, kSampler0, kSampler1, kSampler2, kSampler3,
+    kArrayBuffer, kVertexArray, kProgram, kPixelUnpackBuffer, kPixelPackBuffer, kUniformBuffer,
+    kUnpackAlignment, kUnpackRowLength, kUnpackSkipRows, kUnpackSkipPixels, kUnpackImageHeight,
+    kUnpackSkipImages, kPackAlignment, kDrawFramebuffer, kReadFramebuffer, kRenderbuffer,
+    kBlend, kDepthTest, kCullFace, kScissorTest, kStencilTest, kPolygonOffsetFill, kDither,
+    kRasterizerDiscard, kBlendSrcRGB, kBlendDstRGB, kBlendSrcAlpha, kBlendDstAlpha,
+    kBlendEqRGB, kBlendEqAlpha, kDepthFunc, kDepthMask, kFrontFace, kCullFaceMode,
+    kCount
+  };
+  static constexpr const char *kNames[kCount] = {
+      "active texture", "texture unit 0", "texture unit 1", "texture unit 2", "texture unit 3",
+      "sampler 0", "sampler 1", "sampler 2", "sampler 3",
+      "array buffer", "vertex array", "program", "pixel unpack buffer", "pixel pack buffer", "uniform buffer",
+      "unpack alignment", "unpack row length", "unpack skip rows", "unpack skip pixels", "unpack image height",
+      "unpack skip images", "pack alignment", "draw framebuffer", "read framebuffer", "renderbuffer",
+      "blend", "depth test", "cull face", "scissor test", "stencil test", "polygon offset fill", "dither",
+      "rasterizer discard", "blend src rgb", "blend dst rgb", "blend src alpha", "blend dst alpha",
+      "blend eq rgb", "blend eq alpha", "depth func", "depth mask", "front face", "cull face mode"};
+
+  GLint v[kCount] = {};
+  GLint viewport[4] = {};
+  GLint scissor[4] = {};
+  GLboolean color_mask[4] = {};
 
   static GLStateSnapshot Take() {
     GLStateSnapshot s;
-    glGetIntegerv(GL_ACTIVE_TEXTURE, &s.active_texture);
-    for (int unit = 0; unit < 2; unit++) {
+    GLint *v = s.v;
+    glGetIntegerv(GL_ACTIVE_TEXTURE, &v[kActiveTexture]);
+    for (int unit = 0; unit < 4; unit++) {
       glActiveTexture(GL_TEXTURE0 + unit);
-      glGetIntegerv(GL_TEXTURE_BINDING_2D, &s.texture[unit]);
+      glGetIntegerv(GL_TEXTURE_BINDING_2D, &v[kTex0 + unit]);
+      glGetIntegerv(GL_SAMPLER_BINDING, &v[kSampler0 + unit]);
     }
-    glActiveTexture(s.active_texture);
-    glGetIntegerv(GL_ARRAY_BUFFER_BINDING, &s.array_buffer);
-    glGetIntegerv(GL_VERTEX_ARRAY_BINDING, &s.vertex_array);
-    glGetIntegerv(GL_CURRENT_PROGRAM, &s.program);
-    glGetIntegerv(GL_UNPACK_ALIGNMENT, &s.unpack_alignment);
-    glGetIntegerv(GL_FRAMEBUFFER_BINDING, &s.framebuffer);
+    glActiveTexture(v[kActiveTexture]);
+    const std::pair<Item, GLenum> ints[] = {
+        {kArrayBuffer, GL_ARRAY_BUFFER_BINDING}, {kVertexArray, GL_VERTEX_ARRAY_BINDING},
+        {kProgram, GL_CURRENT_PROGRAM}, {kPixelUnpackBuffer, GL_PIXEL_UNPACK_BUFFER_BINDING},
+        {kPixelPackBuffer, GL_PIXEL_PACK_BUFFER_BINDING}, {kUniformBuffer, GL_UNIFORM_BUFFER_BINDING},
+        {kUnpackAlignment, GL_UNPACK_ALIGNMENT}, {kUnpackRowLength, GL_UNPACK_ROW_LENGTH},
+        {kUnpackSkipRows, GL_UNPACK_SKIP_ROWS}, {kUnpackSkipPixels, GL_UNPACK_SKIP_PIXELS},
+        {kUnpackImageHeight, GL_UNPACK_IMAGE_HEIGHT}, {kUnpackSkipImages, GL_UNPACK_SKIP_IMAGES},
+        {kPackAlignment, GL_PACK_ALIGNMENT}, {kDrawFramebuffer, GL_DRAW_FRAMEBUFFER_BINDING},
+        {kReadFramebuffer, GL_READ_FRAMEBUFFER_BINDING}, {kRenderbuffer, GL_RENDERBUFFER_BINDING},
+        {kBlendSrcRGB, GL_BLEND_SRC_RGB}, {kBlendDstRGB, GL_BLEND_DST_RGB},
+        {kBlendSrcAlpha, GL_BLEND_SRC_ALPHA}, {kBlendDstAlpha, GL_BLEND_DST_ALPHA},
+        {kBlendEqRGB, GL_BLEND_EQUATION_RGB}, {kBlendEqAlpha, GL_BLEND_EQUATION_ALPHA},
+        {kDepthFunc, GL_DEPTH_FUNC}, {kFrontFace, GL_FRONT_FACE}, {kCullFaceMode, GL_CULL_FACE_MODE},
+    };
+    for (const auto &[item, pname] : ints) {
+      glGetIntegerv(pname, &v[item]);
+    }
+    const std::pair<Item, GLenum> caps[] = {
+        {kBlend, GL_BLEND}, {kDepthTest, GL_DEPTH_TEST}, {kCullFace, GL_CULL_FACE},
+        {kScissorTest, GL_SCISSOR_TEST}, {kStencilTest, GL_STENCIL_TEST},
+        {kPolygonOffsetFill, GL_POLYGON_OFFSET_FILL}, {kDither, GL_DITHER},
+        {kRasterizerDiscard, GL_RASTERIZER_DISCARD},
+    };
+    for (const auto &[item, cap] : caps) {
+      v[item] = glIsEnabled(cap);
+    }
+    GLboolean depth_mask = GL_TRUE;
+    glGetBooleanv(GL_DEPTH_WRITEMASK, &depth_mask);
+    v[kDepthMask] = depth_mask;
+    glGetIntegerv(GL_VIEWPORT, s.viewport);
+    glGetIntegerv(GL_SCISSOR_BOX, s.scissor);
+    glGetBooleanv(GL_COLOR_WRITEMASK, s.color_mask);
     return s;
   }
 
-  void Restore() const {
-    for (int unit = 0; unit < 2; unit++) {
-      glActiveTexture(GL_TEXTURE0 + unit);
-      glBindTexture(GL_TEXTURE_2D, texture[unit]);
+  // Logs which state differs from `before` (a limited number of times).
+  static void Report(const GLStateSnapshot &before, const GLStateSnapshot &after, const char *where) {
+    static int reports = 0;
+    for (int i = 0; i < kCount && reports < 40; i++) {
+      if (before.v[i] != after.v[i]) {
+        reports++;
+        LOG_WARNING.printf("VR: %s changed GL %s: %d -> %d", where, kNames[i], before.v[i], after.v[i]);
+      }
     }
-    glActiveTexture(active_texture);
-    glBindVertexArray(vertex_array);
-    glBindBuffer(GL_ARRAY_BUFFER, array_buffer);
-    glUseProgram(program);
-    glPixelStorei(GL_UNPACK_ALIGNMENT, unpack_alignment);
-    glBindFramebuffer(GL_FRAMEBUFFER, framebuffer);
+    if (reports < 40 && (memcmp(before.viewport, after.viewport, sizeof(viewport)) ||
+                         memcmp(before.color_mask, after.color_mask, sizeof(color_mask)))) {
+      reports++;
+      LOG_WARNING.printf("VR: %s changed GL viewport or color mask", where);
+    }
+  }
+
+  void Restore() const {
+    auto set_cap = [](GLenum cap, GLint on) { on ? glEnable(cap) : glDisable(cap); };
+    for (int unit = 0; unit < 4; unit++) {
+      glActiveTexture(GL_TEXTURE0 + unit);
+      glBindTexture(GL_TEXTURE_2D, v[kTex0 + unit]);
+      glBindSampler(unit, v[kSampler0 + unit]);
+    }
+    glActiveTexture(v[kActiveTexture]);
+    glBindVertexArray(v[kVertexArray]);
+    glBindBuffer(GL_ARRAY_BUFFER, v[kArrayBuffer]);
+    glBindBuffer(GL_PIXEL_UNPACK_BUFFER, v[kPixelUnpackBuffer]);
+    glBindBuffer(GL_PIXEL_PACK_BUFFER, v[kPixelPackBuffer]);
+    glBindBuffer(GL_UNIFORM_BUFFER, v[kUniformBuffer]);
+    glUseProgram(v[kProgram]);
+    glPixelStorei(GL_UNPACK_ALIGNMENT, v[kUnpackAlignment]);
+    glPixelStorei(GL_UNPACK_ROW_LENGTH, v[kUnpackRowLength]);
+    glPixelStorei(GL_UNPACK_SKIP_ROWS, v[kUnpackSkipRows]);
+    glPixelStorei(GL_UNPACK_SKIP_PIXELS, v[kUnpackSkipPixels]);
+    glPixelStorei(GL_UNPACK_IMAGE_HEIGHT, v[kUnpackImageHeight]);
+    glPixelStorei(GL_UNPACK_SKIP_IMAGES, v[kUnpackSkipImages]);
+    glPixelStorei(GL_PACK_ALIGNMENT, v[kPackAlignment]);
+    glBindFramebuffer(GL_DRAW_FRAMEBUFFER, v[kDrawFramebuffer]);
+    glBindFramebuffer(GL_READ_FRAMEBUFFER, v[kReadFramebuffer]);
+    glBindRenderbuffer(GL_RENDERBUFFER, v[kRenderbuffer]);
+    set_cap(GL_BLEND, v[kBlend]);
+    set_cap(GL_DEPTH_TEST, v[kDepthTest]);
+    set_cap(GL_CULL_FACE, v[kCullFace]);
+    set_cap(GL_SCISSOR_TEST, v[kScissorTest]);
+    set_cap(GL_STENCIL_TEST, v[kStencilTest]);
+    set_cap(GL_POLYGON_OFFSET_FILL, v[kPolygonOffsetFill]);
+    set_cap(GL_DITHER, v[kDither]);
+    set_cap(GL_RASTERIZER_DISCARD, v[kRasterizerDiscard]);
+    glBlendFuncSeparate(v[kBlendSrcRGB], v[kBlendDstRGB], v[kBlendSrcAlpha], v[kBlendDstAlpha]);
+    glBlendEquationSeparate(v[kBlendEqRGB], v[kBlendEqAlpha]);
+    glDepthFunc(v[kDepthFunc]);
+    glDepthMask(v[kDepthMask] ? GL_TRUE : GL_FALSE);
+    glFrontFace(v[kFrontFace]);
+    glCullFace(v[kCullFaceMode]);
+    glViewport(viewport[0], viewport[1], viewport[2], viewport[3]);
+    glScissor(scissor[0], scissor[1], scissor[2], scissor[3]);
+    glColorMask(color_mask[0], color_mask[1], color_mask[2], color_mask[3]);
   }
 };
 
@@ -241,6 +334,7 @@ struct GLStateSnapshot {
   [&] {                                                                                                            \
     const GLStateSnapshot saved_ = GLStateSnapshot::Take();                                                        \
     auto result_ = (expr);                                                                                         \
+    GLStateSnapshot::Report(saved_, GLStateSnapshot::Take(), #expr);                                              \
     saved_.Restore();                                                                                              \
     return result_;                                                                                                \
   }()

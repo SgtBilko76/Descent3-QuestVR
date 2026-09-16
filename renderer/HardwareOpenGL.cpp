@@ -120,6 +120,9 @@ struct Renderer {
     return shader_.addVertexData(begin, end);
   }
 
+  // Call once per presented frame.
+  void newFrame() { shader_.newFrame(); }
+
   struct PosColorUVVertex_tag {};
   template <typename VertexIter, typename = std::enable_if_t<std::is_same_v<
                                      typename std::iterator_traits<VertexIter>::value_type, PosColorUVVertex>>>
@@ -1502,6 +1505,10 @@ void rend_Flip() {
     OpenGL_sets_this_frame[i] = 0;
   }
 #endif
+
+  if (gRenderer) {
+    gRenderer->newFrame();
+  }
 
   gpu_last_frame_polys_drawn = OpenGL_polys_drawn;
   gpu_last_frame_verts_processed = OpenGL_verts_processed;
