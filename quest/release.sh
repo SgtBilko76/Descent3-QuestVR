@@ -74,5 +74,5 @@ git archive --format=tar.gz --prefix="$NAME-source/" -o "$OUT/source/$NAME-sourc
 echo
 "$ANDROID_SDK_ROOT/build-tools/36.0.0/aapt2" dump badging "$OUT/$NAME.apk" | grep -E "^package:|debuggable" || true
 "$ANDROID_SDK_ROOT/build-tools/36.0.0/apksigner" verify --print-certs "$OUT/$NAME.apk" | grep -E "Signer #1 certificate (DN|SHA-256)"
-echo "engine version: $(strings "$BUILD_DIR/build/libmain.so" | grep -m1 -E "^$TAG" || echo '?')"
+echo "engine version: $(strings "$BUILD_DIR/build/libmain.so" | grep -E "^$TAG" | head -1)"
 echo "release: builds/release/$NAME.zip ($(du -h "$D3_ROOT/builds/release/$NAME.zip" | cut -f1))"
