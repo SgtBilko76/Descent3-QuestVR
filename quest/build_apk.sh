@@ -8,6 +8,7 @@
 set -euo pipefail
 
 D3_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+source "$D3_ROOT/quest/env.sh"
 BUILD_DIR="${BUILD_DIR:-$D3_ROOT/builds/quest}"
 OUT_DIR="${OUT_DIR:-$BUILD_DIR/apk}"
 PKG="com.descentdevelopers.descent3"
