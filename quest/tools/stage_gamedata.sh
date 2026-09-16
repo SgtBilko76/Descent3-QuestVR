@@ -15,10 +15,21 @@
 # the engine loads is kept: *.hog, *.pld, missions/, movies/, demo/, custom/.
 # The 1999 Windows binaries (exe/dll, netgames/*.d3m, online/*.d3c, editor)
 # are left out; the port builds its own arm64 versions of the modules.
+#
+# Works from the source tree (output in builds/) or standalone from a release
+# package (output next to the current directory). Needs python3, and adb for
+# --push; InstallShield discs also need git, cmake and a C compiler.
 set -euo pipefail
-D3_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
-WORK="${WORK_DIR:-$D3_ROOT/builds/gamedata-work}"
-STAGE="${STAGE_DIR:-$D3_ROOT/builds/gamedata}"
+TOOLS_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+if [[ -f "$TOOLS_DIR/../env.sh" ]]; then
+  D3_ROOT="$(cd "$TOOLS_DIR/../.." && pwd)"
+  source "$D3_ROOT/quest/env.sh"
+  OUT_BASE="$D3_ROOT/builds"
+else
+  OUT_BASE="$PWD"
+fi
+WORK="${WORK_DIR:-$OUT_BASE/gamedata-work}"
+STAGE="${STAGE_DIR:-$OUT_BASE/gamedata}"
 DEVICE_DIR="/sdcard/Android/data/com.descentdevelopers.descent3/files"
 KEEP_DIRS=(missions movies demo custom)
 
@@ -37,14 +48,13 @@ if [[ $push_only -eq 0 && ${#images[@]} -eq 0 ]]; then
   exit 1
 fi
 
-source "$D3_ROOT/quest/env.sh"
 shopt -s nullglob nocaseglob
 
 UNSHIELD="${UNSHIELD:-}"
 need_unshield() {
   [[ -n "$UNSHIELD" ]] && return
   if command -v unshield >/dev/null; then UNSHIELD="$(command -v unshield)"; return; fi
-  local src="$D3_ROOT/builds/unshield-src" bld="$D3_ROOT/builds/unshield-build"
+  local src="$OUT_BASE/unshield-src" bld="$OUT_BASE/unshield-build"
   if [[ ! -x "$bld/src/unshield" ]]; then
     echo "==> building unshield (InstallShield extractor)"
     [[ -d "$src" ]] || git clone -q --depth 1 --branch 1.6.2 https://github.com/twogood/unshield.git "$src"
@@ -81,7 +91,7 @@ for image in ${images[@]+"${images[@]}"}; do
   n=$((n + 1))
   disc="$WORK/disc$n"
   echo "==> $image"
-  python3 "$D3_ROOT/quest/tools/extract_cd.py" "$image" "$disc"
+  python3 "$TOOLS_DIR/extract_cd.py" "$image" "$disc"
   take_game_files "$disc"
 
   # InstallShield cabinets. A volume set is extracted from its first volume;
@@ -123,7 +133,7 @@ for image in ${images[@]+"${images[@]}"}; do
   done
   for p in "$disc"/eng_*.pkg; do pkgs+=("$p"); done
   if [[ ${#pkgs[@]} -gt 0 ]]; then
-    python3 "$D3_ROOT/quest/tools/extract_pkg.py" "$WORK/pkg$n" "${pkgs[@]}"
+    python3 "$TOOLS_DIR/extract_pkg.py" "$WORK/pkg$n" "${pkgs[@]}"
     take_game_files "$WORK/pkg$n"
   fi
 done

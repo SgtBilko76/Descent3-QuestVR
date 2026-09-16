@@ -9,9 +9,8 @@
                             D3Activity start the engine with -novr.
 -->
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
-    package="com.descentdevelopers.descent3"
-    android:versionCode="1"
-    android:versionName="1.6.0-quest">
+    package="com.descentdevelopers.descent3">
+    <!-- versionCode/versionName are set by quest/build_apk.sh. -->
 
     <uses-sdk android:minSdkVersion="29" android:targetSdkVersion="32" />
 

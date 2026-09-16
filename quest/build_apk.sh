@@ -5,6 +5,15 @@
 # Deliberately Gradle-free: the whole APK is aapt2 + javac + d8 + apksigner.
 # That keeps the toolchain to what the Android SDK already ships and makes
 # every step inspectable, which matters while the port is still moving.
+#
+# Environment (all optional):
+#   APK_MODE=vr|flat          immersive VR app (default) or 2D panel app
+#   APK_DEBUGGABLE=1|0        debuggable dev build (default) or release build
+#   APK_VERSION_NAME, APK_VERSION_CODE
+#   KEYSTORE, KEY_ALIAS, KEYSTORE_PASS, KEY_PASS
+#                             signing key; defaults to a local debug key that
+#                             is generated on first use
+#   APK_NAME                  output file name (default descent3-quest.apk)
 set -euo pipefail
 
 D3_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -57,6 +66,9 @@ echo "==> aapt2 compile"
 APK_DEBUGGABLE="${APK_DEBUGGABLE:-1}"
 debug_flag=()
 [[ "$APK_DEBUGGABLE" == 1 ]] && debug_flag=(--debug-mode)
+APK_VERSION_NAME="${APK_VERSION_NAME:-dev}"
+APK_VERSION_CODE="${APK_VERSION_CODE:-1}"
+APK_NAME="${APK_NAME:-descent3-quest.apk}"
 
 echo "==> aapt2 link"
 "$AAPT2" link ${debug_flag[@]+"${debug_flag[@]}"} \
@@ -64,6 +76,7 @@ echo "==> aapt2 link"
   --manifest "$MANIFEST" \
   --java "$OUT_DIR/gen" \
   --min-sdk-version 29 --target-sdk-version 32 \
+  --version-code "$APK_VERSION_CODE" --version-name "$APK_VERSION_NAME" --replace-version \
   -o "$OUT_DIR/base.apk" \
   "$OUT_DIR/flat/res.zip"
 
@@ -96,8 +109,16 @@ cp "$OUT_DIR/base.apk" "$OUT_DIR/unsigned.apk"
 # them straight out of the APK (extractNativeLibs=false behaviour).
 ( cd "$OUT_DIR" && zip -q -r -0 unsigned.apk lib )
 
-KEYSTORE="${KEYSTORE:-$D3_ROOT/quest/debug.keystore}"
+DEBUG_KEYSTORE="$D3_ROOT/quest/debug.keystore"
+KEYSTORE="${KEYSTORE:-$DEBUG_KEYSTORE}"
+KEY_ALIAS="${KEY_ALIAS:-androiddebugkey}"
+export KEYSTORE_PASS="${KEYSTORE_PASS:-android}"
+export KEY_PASS="${KEY_PASS:-$KEYSTORE_PASS}"
 if [ ! -f "$KEYSTORE" ]; then
+  if [[ "$KEYSTORE" != "$DEBUG_KEYSTORE" ]]; then
+    echo "keystore not found: $KEYSTORE" >&2
+    exit 1
+  fi
   echo "==> generating debug keystore"
   keytool -genkeypair -keystore "$KEYSTORE" -storepass android -keypass android \
     -alias androiddebugkey -keyalg RSA -keysize 2048 -validity 10000 \
@@ -105,9 +126,10 @@ if [ ! -f "$KEYSTORE" ]; then
 fi
 
 echo "==> zipalign + sign"
-"$ZIPALIGN" -f -p 4 "$OUT_DIR/unsigned.apk" "$OUT_DIR/descent3-quest.apk"
-"$APKSIGNER" sign --ks "$KEYSTORE" --ks-pass pass:android --key-pass pass:android \
-  --min-sdk-version 29 "$OUT_DIR/descent3-quest.apk"
+"$ZIPALIGN" -f -p 4 "$OUT_DIR/unsigned.apk" "$OUT_DIR/$APK_NAME"
+"$APKSIGNER" sign --ks "$KEYSTORE" --ks-key-alias "$KEY_ALIAS" \
+  --ks-pass env:KEYSTORE_PASS --key-pass env:KEY_PASS \
+  --min-sdk-version 29 "$OUT_DIR/$APK_NAME"
 
 echo
-echo "APK ($APK_MODE): $OUT_DIR/descent3-quest.apk  ($(du -h "$OUT_DIR/descent3-quest.apk" | cut -f1))"
+echo "APK ($APK_MODE, $APK_VERSION_NAME): $OUT_DIR/$APK_NAME  ($(du -h "$OUT_DIR/$APK_NAME" | cut -f1))"

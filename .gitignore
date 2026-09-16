@@ -411,3 +411,5 @@ quest/debug.keystore
 *.iso
 *.bin
 *.cue
+# Quest port: release signing key (back it up, never commit it)
+quest/release/
