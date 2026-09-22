@@ -1,5 +1,8 @@
 # Descent 3 for Meta Quest (VR)
 
+[![Sponsor](https://img.shields.io/badge/Sponsor-SgtBilko76-ea4aaa?logo=githubsponsors&logoColor=white)](https://github.com/sponsors/SgtBilko76)
+
+
 This fork is a standalone VR port of the Descent 3 open source engine for
 Meta Quest headsets (OpenXR, stereo rendering and cockpit, Touch
 controllers). You need your own copy of the Descent 3 game data.
