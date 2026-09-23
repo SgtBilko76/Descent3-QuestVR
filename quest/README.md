@@ -1,18 +1,21 @@
-# Descent 3 for Meta Quest 
+# Descent 3 for Meta Quest and PICO
 
 A VR port of the [Descent 3 open source engine](https://github.com/DescentDevelopers/Descent3)
-for Meta Quest headsets, running standalone as a sideloaded app. You sit in a
+for standalone VR headsets, running as a sideloaded app. You sit in a
 virtual cockpit: the ship flies on the Touch controllers while you look around
 freely. The world and the cockpit are rendered in stereo; menus, cutscenes and
 the flat HUD float in front of you.
 
-This is a beta. It has been tested on a **Meta Quest 3** only. See
-`CHANGELOG.md` for what changed between versions.
+This is a beta. It has been tested on a **Meta Quest 3** only. The same APK
+also carries PICO support, which has **never been run on a PICO headset** --
+if you try it, please report what happens. See `CHANGELOG.md` for what changed
+between versions.
 
 ## What you need
 
 - A Meta Quest with developer mode enabled (Quest 3 tested; Quest 2, Quest Pro
-  and Quest 3S should work but are untested).
+  and Quest 3S should work but are untested), or a PICO headset (PICO 4 or
+  Neo 3; completely untested, see below).
 - A PC with `adb` (Android platform tools), or SideQuest.
 - **Your own copy of Descent 3.** This package contains only the engine; the
   game data must come from a copy you own (original CDs, GOG or Steam).
@@ -108,6 +111,11 @@ Recenter the view with the Meta button (hold).
 - Custom missions that ship Windows-only level scripts run without their
   scripts.
 - Multiplayer is untested.
+- PICO headsets: never tested. The app ships the standard Khronos OpenXR
+  loader and PICO controller bindings, but if PICO OS does not hand the
+  loader its runtime, the app will start without entering VR. The data
+  folder is then /sdcard/Android/data/com.descentdevelopers.descent3/files
+  as on Quest.
 - Uninstalling deletes the game data folder (see above).
 
 ## License and source

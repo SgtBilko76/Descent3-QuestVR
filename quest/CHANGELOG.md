@@ -1,5 +1,14 @@
 # Descent 3 for Meta Quest — changelog
 
+## 0.3-beta
+
+- PICO headsets: the same APK now also declares itself as a PICO VR app and
+  offers the PICO 4 / Neo 3 controller bindings (same button layout).
+  **Untested**: no PICO hardware was available, and it is unknown whether
+  PICO OS finds the runtime through the bundled Khronos OpenXR loader.
+- Head tracking is no longer declared as a required feature, so the APK also
+  installs on non-Meta headsets.
+
 ## 0.2-beta
 
 - Menus and dialogs are controlled with the controllers only: left stick

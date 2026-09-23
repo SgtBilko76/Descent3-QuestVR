@@ -101,6 +101,7 @@ struct Input {
 
   vr_controller_state state{};
   bool click_down[2] = {false, false};    // thumbstick clicks, last frame
+  XrPath reported_profile = XR_NULL_PATH; // last profile logged
 
   // Discrete-action bookkeeping.
   std::vector<SDL_Keycode> held_keys;           // keys currently pressed on the engine's behalf
@@ -124,6 +125,9 @@ struct VRState {
   XrSessionState session_state = XR_SESSION_STATE_UNKNOWN;
   bool session_running = false;
   // Extension entry points; the loader only exports core functions.
+  bool has_pico_controllers = false; // XR_BD_controller_interaction (PICO)
+  bool has_touch_plus = false;       // XR_META_touch_controller_plus (Quest 3)
+  bool has_touch_pro = false;        // XR_FB_touch_controller_pro (Quest Pro)
   PFN_xrRequestDisplayRefreshRateFB request_refresh_rate = nullptr;
   PFN_xrEnumerateDisplayRefreshRatesFB enumerate_refresh_rates = nullptr;
   PFN_xrPerfSettingsSetPerformanceLevelEXT set_perf_level = nullptr;
@@ -543,11 +547,35 @@ bool InitInput() {
   for (const auto &[action, path] : bindings) {
     suggested.push_back({action, Path(path)});
   }
-  XrInteractionProfileSuggestedBinding profile{XR_TYPE_INTERACTION_PROFILE_SUGGESTED_BINDING};
-  profile.interactionProfile = Path("/interaction_profiles/oculus/touch_controller");
-  profile.suggestedBindings = suggested.data();
-  profile.countSuggestedBindings = static_cast<uint32_t>(suggested.size());
-  if (!XrOk(xrSuggestInteractionProfileBindings(vr.instance, &profile), "xrSuggestInteractionProfileBindings")) {
+  // The same layout on every supported controller. A runtime rejects profiles
+  // it doesn't know, so only the ones that apply to this headset stick; at
+  // least one must be accepted.
+  auto suggest = [&](const char *profile_path) {
+    XrInteractionProfileSuggestedBinding profile{XR_TYPE_INTERACTION_PROFILE_SUGGESTED_BINDING};
+    profile.interactionProfile = Path(profile_path);
+    profile.suggestedBindings = suggested.data();
+    profile.countSuggestedBindings = static_cast<uint32_t>(suggested.size());
+    const bool ok = XR_SUCCEEDED(xrSuggestInteractionProfileBindings(vr.instance, &profile));
+    LOG_INFO.printf("VR: controller profile %s: %s", profile_path, ok ? "bound" : "not supported");
+    return ok;
+  };
+  bool any_profile = suggest("/interaction_profiles/oculus/touch_controller");
+  // Newer Meta controllers have their own profiles. Runtimes are supposed to
+  // remap the classic Touch bindings onto them, but binding them directly
+  // doesn't rely on that.
+  if (vr.has_touch_plus) {
+    any_profile = suggest("/interaction_profiles/meta/touch_controller_plus") || any_profile;
+  }
+  if (vr.has_touch_pro) {
+    any_profile = suggest("/interaction_profiles/facebook/touch_controller_pro") || any_profile;
+  }
+  if (vr.has_pico_controllers) {
+    // PICO headsets (XR_BD_controller_interaction).
+    any_profile = suggest("/interaction_profiles/bytedance/pico4_controller") || any_profile;
+    any_profile = suggest("/interaction_profiles/bytedance/pico_neo3_controller") || any_profile;
+  }
+  if (!any_profile) {
+    LOG_ERROR << "VR: no supported controller profile";
     return false;
   }
 
@@ -703,6 +731,22 @@ void PollInput() {
   sync.activeActionSets = &active;
   if (XR_FAILED(xrSyncActions(vr.session, &sync))) {
     return;
+  }
+
+  // Report which controller profile the runtime bound (once per change): the
+  // first thing to check if the controllers do nothing on a given headset.
+  {
+    XrInteractionProfileState ip{XR_TYPE_INTERACTION_PROFILE_STATE};
+    if (XR_SUCCEEDED(xrGetCurrentInteractionProfile(vr.session, in.hand[kRight], &ip)) &&
+        ip.interactionProfile != in.reported_profile) {
+      in.reported_profile = ip.interactionProfile;
+      char name[XR_MAX_PATH_LENGTH] = "(none)";
+      uint32_t len = 0;
+      if (ip.interactionProfile != XR_NULL_PATH) {
+        xrPathToString(vr.instance, ip.interactionProfile, sizeof(name), &len, name);
+      }
+      LOG_INFO.printf("VR: active controller profile: %s", name);
+    }
   }
 
   vr_controller_state &s = in.state;
@@ -983,6 +1027,18 @@ bool vrgl_Init() {
   const bool has_perf_settings = available(XR_EXT_PERFORMANCE_SETTINGS_EXTENSION_NAME);
   if (has_perf_settings) {
     extensions.push_back(XR_EXT_PERFORMANCE_SETTINGS_EXTENSION_NAME);
+  }
+  vr.has_pico_controllers = available(XR_BD_CONTROLLER_INTERACTION_EXTENSION_NAME);
+  if (vr.has_pico_controllers) {
+    extensions.push_back(XR_BD_CONTROLLER_INTERACTION_EXTENSION_NAME);
+  }
+  vr.has_touch_plus = available(XR_META_TOUCH_CONTROLLER_PLUS_EXTENSION_NAME);
+  if (vr.has_touch_plus) {
+    extensions.push_back(XR_META_TOUCH_CONTROLLER_PLUS_EXTENSION_NAME);
+  }
+  vr.has_touch_pro = available(XR_FB_TOUCH_CONTROLLER_PRO_EXTENSION_NAME);
+  if (vr.has_touch_pro) {
+    extensions.push_back(XR_FB_TOUCH_CONTROLLER_PRO_EXTENSION_NAME);
   }
 
   XrInstanceCreateInfoAndroidKHR android{XR_TYPE_INSTANCE_CREATE_INFO_ANDROID_KHR};
