@@ -1,7 +1,9 @@
 #!/usr/bin/env bash
 # Build a release package of the Quest port.
 #
-#   quest/release.sh VERSION        e.g. quest/release.sh 0.1-beta
+#   quest/release.sh VERSION        e.g. quest/release.sh 0.3-beta
+#
+# The package is named Descent3-VR-VERSION (RELEASE_NAME overrides it).
 #
 # Requires a clean working tree (tracked files) and a tag quest-vVERSION on
 # HEAD, so the engine reports that tag as its version. Builds from scratch in
@@ -19,7 +21,7 @@ cd "$D3_ROOT"
 
 VERSION="${1:?usage: quest/release.sh VERSION (e.g. 0.1-beta)}"
 TAG="quest-v$VERSION"
-NAME="Descent3-Quest-$VERSION"
+NAME="${RELEASE_NAME:-Descent3-VR-$VERSION}"
 # versionCode: MAJOR*10000 + MINOR*100 + PATCH, from the numeric part.
 IFS=. read -r major minor patch <<<"${VERSION%%-*}"
 VERSION_CODE=$(( ${major:-0} * 10000 + ${minor:-0} * 100 + ${patch:-0} ))

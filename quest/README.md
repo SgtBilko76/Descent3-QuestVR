@@ -26,7 +26,7 @@ between versions.
 (In the source tree, `@VERSION@` stands for the release version.)
 
 ```bash
-adb install Descent3-Quest-@VERSION@.apk
+adb install Descent3-VR-@VERSION@.apk
 ```
 
 The app appears in the Quest library under *Unknown Sources*. To update an

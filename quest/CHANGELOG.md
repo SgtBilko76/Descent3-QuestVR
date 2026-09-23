@@ -8,6 +8,8 @@
   PICO OS finds the runtime through the bundled Khronos OpenXR loader.
 - Head tracking is no longer declared as a required feature, so the APK also
   installs on non-Meta headsets.
+- The downloads are now named `Descent3-VR-<version>` instead of
+  `Descent3-Quest-<version>`, since one build serves both headsets.
 
 ## 0.2-beta
 
