@@ -1,16 +1,21 @@
-# Descent 3 for Meta Quest (VR)
+# Descent 3 VR -- Meta Quest and PICO
 
 [![Sponsor](https://img.shields.io/badge/Sponsor-SgtBilko76-ea4aaa?logo=githubsponsors&logoColor=white)](https://github.com/sponsors/SgtBilko76)
 
 
 This fork is a standalone VR port of the Descent 3 open source engine for
-Meta Quest headsets (OpenXR, stereo rendering and cockpit, Touch
-controllers). You need your own copy of the Descent 3 game data.
+Meta Quest and PICO headsets: OpenXR, stereo world and cockpit rendering,
+controller flight and menus. You sit in a virtual cockpit -- the ship flies on
+the sticks while your head looks around freely. You need your own copy of the
+Descent 3 game data.
 
-- Download: see the [Releases](../../releases) page.
+- Download: `Descent3-VR-<version>.apk` on the [Releases](../../releases) page.
 - Installing, game data, controls: [quest/README.md](quest/README.md)
 - Changes: [quest/CHANGELOG.md](quest/CHANGELOG.md)
 - Building: `quest/build.sh` (Android SDK/NDK, see `quest/env.sh`)
+
+Tested on a Meta Quest 3. The same APK carries PICO support, which has never
+been run on a PICO headset -- reports welcome.
 
 The port is developed on the `quest-vr-port` branch. The original engine
 README follows.

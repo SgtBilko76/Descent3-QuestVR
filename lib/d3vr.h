@@ -73,15 +73,16 @@ void vr_BeginReticleLayer();
 void vr_EndReticleLayer();
 
 // Tells the VR input whether a game menu/dialog is open over the world (e.g.
-// the pause or exit dialog). The controllers then act as pointer and menu
-// keys even though the world is still being rendered. Call once per frame.
+// the pause or exit dialog). The controllers then drive menu navigation
+// instead of the ship, even though the world is still being rendered behind
+// the dialog. Call once per frame.
 void vr_SetMenuActive(bool active);
 
-// Touch controller state for flight input (Controls.cpp maps it to ship
-// controls). Returns false when there is no VR input. Menu navigation (pointer,
-// clicks, Escape/Enter) and discrete flight actions (flare, weapon cycling,
-// headlight, automap, pause) are turned into mouse/key events by the VR module
-// itself, so they work everywhere the engine reads the keyboard and mouse.
+// Controller state for flight input (Controls.cpp maps it to ship controls).
+// Returns false when there is no VR input. Menu navigation (arrow keys,
+// Escape/Enter) and discrete flight actions (flare, weapon cycling, headlight,
+// automap, pause) are turned into key events by the VR module itself, so they
+// work everywhere the engine reads the keyboard.
 bool vr_GetControllerState(vr_controller_state *state);
 
 #else

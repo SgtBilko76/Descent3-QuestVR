@@ -2,7 +2,7 @@
 
 A VR port of the [Descent 3 open source engine](https://github.com/DescentDevelopers/Descent3)
 for standalone VR headsets, running as a sideloaded app. You sit in a
-virtual cockpit: the ship flies on the Touch controllers while you look around
+virtual cockpit: the ship flies on the controllers while you look around
 freely. The world and the cockpit are rendered in stereo; menus, cutscenes and
 the flat HUD float in front of you.
 
@@ -29,9 +29,9 @@ between versions.
 adb install Descent3-VR-@VERSION@.apk
 ```
 
-The app appears in the Quest library under *Unknown Sources*. To update an
-earlier release, install the new APK with `adb install -r`; your game data and
-pilots are kept.
+The app appears in the Quest library under *Unknown Sources* (on PICO, in the
+app library). To update an earlier release, install the new APK with
+`adb install -r`; your game data and pilots are kept.
 
 > **Uninstalling the app deletes the game data folder below** (Android removes
 > an app's data directory with the app). Keep a copy of your game files.
@@ -76,10 +76,10 @@ adb shell "cd $DATA && find . -mindepth 1 -type d -exec chmod 2777 {} +"
 |---|---|---|
 | Left stick | thrust forward/back, slide left/right | arrow keys |
 | Right stick | turn, pitch (stick up = nose down) | arrow keys |
-| Right trigger | fire primary | click (laser pointer) |
-| Left trigger | fire secondary | click (laser pointer) |
+| Right trigger | fire primary | select |
+| Left trigger | fire secondary | select |
 | Grips | bank left / right | — |
-| A | afterburner | click |
+| A | afterburner | select |
 | B | flare (hold: next primary) | back |
 | X / Y | slide down / up | X = Enter |
 | Right stick click | drop countermeasure (hold: next countermeasure) | — |
@@ -96,9 +96,9 @@ In menus and dialogs:
 | Right stick | move within lists and menus |
 | Trigger, A or X | select |
 | B or menu button | back |
- Text fields, such as the pilot name, open the Quest's
-system keyboard.
-Recenter the view with the Meta button (hold).
+
+Text fields, such as the pilot name, open the headset's system keyboard.
+Recenter the view by holding the Meta button (on PICO, the PICO button).
 
 ## Known issues
 
@@ -122,10 +122,11 @@ Recenter the view with the Meta button (hold).
 
 The engine is licensed under the GNU General Public License v3 (`LICENSE`).
 The complete source for this build is included in `source/` and is available
-from the project repository. Third-party components are listed in
-`THIRD_PARTY.md`; this port additionally uses SDL 3 (zlib license), the
-Khronos OpenXR loader (Apache 2.0), glm (MIT), plog (MIT) and cpp-httplib (MIT).
+from the project repository, <https://github.com/SgtBilko76/Descent3-VR>.
+Third-party components are listed in `THIRD_PARTY.md`; this port additionally
+uses SDL 3 (zlib license), the Khronos OpenXR loader (Apache 2.0), glm (MIT),
+plog (MIT) and cpp-httplib (MIT).
 
 Descent 3 is a trademark of its respective owners. This port is not affiliated
-with or endorsed by Interplay, Parallax Software, Outrage Entertainment or
-Meta.
+with or endorsed by Interplay, Parallax Software, Outrage Entertainment, Meta
+or PICO.
