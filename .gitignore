@@ -413,3 +413,7 @@ quest/debug.keystore
 *.cue
 # Quest port: release signing key (back it up, never commit it)
 quest/release/
+
+# Game data / desktop build archives kept next to the source
+Descent3_Release_Linux-x64.zip
+d3linux140b.zip
